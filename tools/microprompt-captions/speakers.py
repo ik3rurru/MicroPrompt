@@ -260,7 +260,7 @@ class SpeakerTracker:
             reference = samples[: int(REFERENCE_S * RATE)].copy()
             voice = Voice(len(self.voices) + 1, name, reference, enrolled=True)
             self.voices.append(voice)
-            if len(self.prefix) < MAX_VOICES - 1:
+            if len(self.prefix) < MAX_VOICES:
                 self.prefix.append((voice, reference))
         return voice
 
@@ -279,7 +279,10 @@ class SpeakerTracker:
         absent = [v for v in self.voices
                   if id(v) not in active and v.reference.size >= MIN_VOICE_S * RATE]
         absent.sort(key=lambda v: v.last_heard if v.last_heard >= 0 else float("inf"), reverse=True)
-        room = max(0, MAX_VOICES - 1 - len(active))
+        # Every slot the active voices leave: a known voice coming back is
+        # likelier than a fifth one (measured: reserving a slot for a new
+        # voice cost the returning one its number).
+        room = max(0, MAX_VOICES - len(active))
         self.prefix = [(v, v.reference.copy()) for v in absent[:room]]
 
     def label(self, start: int, end: int, provisional: bool = False) -> Voice | None:
