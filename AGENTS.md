@@ -1,4 +1,13 @@
 <!-- tallow -->
+> **Fork note (MicroPrompt).** This repository is MicroPrompt, a fork of
+> `anomalyco/hex` that builds a live-subtitles teleprompter
+> ([`docs/plans/teleprompter.md`](docs/plans/teleprompter.md)). The guide below
+> is upstream's. Its process rules (Private Kit Tool, the `dev`/`production`
+> rulesets, merging PRs without asking, Kit releases, deploying the site) apply
+> to upstream only, not here: ask this repository's owner before merging,
+> releasing, or pushing to shared branches. Its architecture, invariants, and
+> conventions still describe the code.
+
 # Hex Agent Guide
 
 ## Private Kit Tool

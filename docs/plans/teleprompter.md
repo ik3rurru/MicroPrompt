@@ -1,0 +1,264 @@
+# MicroPrompt: teleprompter de subtítulos en vivo
+
+Estado: plan, nada implementado todavía. Escrito el 6 de noviembre de 2026
+sobre Hex `dev` en `49de3e16` (v3.3.0).
+
+## Qué queremos
+
+Mientras hablas, MicroPrompt muestra en pantalla lo que vas diciendo, como
+subtítulos, con el menor retraso posible:
+
+- Empieza y termina con un atajo o un botón. No hay que mantener una tecla
+  pulsada, como en el dictado de Hex.
+- Se ven 2 o 3 líneas grandes y legibles. La última línea crece palabra a
+  palabra y las anteriores suben al completarse.
+- Las palabras que el modelo ya no va a cambiar (estables) se distinguen de
+  las provisionales.
+- Todo ocurre en local, como en Hex. El audio no sale del equipo.
+
+## Lo que Hex ya trae
+
+Hex resuelve ya casi todo lo difícil. Sólo nos falta conectar las piezas de
+otra forma.
+
+```ts
+Hex hoy
+├── Motor de transcripción local          src/transcription/engine.rs
+│   ├── un hilo que posee el modelo GGUF (transcribe.cpp) y ordena toda la inferencia
+│   └── LiveStream / YieldingStream -> Partial { stable, tentative }
+│       src/transcription/engine/streaming.rs
+├── Modelos con streaming (streams: true)  src/transcription/models.rs
+│   ├── Parakeet Unified English          sólo inglés
+│   └── Nemotron 3.5 ASR                  27 idiomas, español incluido ("es")
+│       el streaming sólo se activa en GPU (Metal o Vulkan); HEX_STREAMING=1 lo fuerza en CPU
+├── Sesiones de transcripción continua    src/transcription/stream.rs
+│   ├── corta el audio en ventanas en las pausas (máx. 25 s)  src/transcription/pause_segmenter.rs
+│   ├── eventos Partial / Segment / Final
+│   ├── cede el motor al dictado y acumula hasta 120 s de audio pendiente
+│   └── transcribe offline la ventana completa si el modelo no hace streaming
+├── API local /streams                    src/local_api/streams.rs, docs/streams.md
+│   └── otra app empuja PCM de 16 kHz y recibe parciales por SSE
+├── "Live text" (Labs)                    src/dictation/live_text.rs + src/rune_ui/live_text.rs
+│   └── overlay de UNA línea junto al HUD, sólo mientras dictas (push-to-talk)
+├── Captura de micrófono                  src/audio.rs (cpal, mono, 16 kHz tras remuestrear)
+│   └── HEX_AUDIO_FIXTURE=<wav> sustituye el micro por un fichero (pruebas sin hablar)
+└── Overlays Rune                         src/rune_hud.rs, src/rune_ui/live_text.rs
+    └── ventanas sin foco, transparentes y que dejan pasar los clics, en macOS, Windows y Linux
+```
+
+Latencia medida por Hex con el streaming actual (`docs/features/dictation.md`):
+
+- Las primeras palabras tardan de 2,2 a 5 s.
+- Después el texto avanza cada 1,04 a 1,12 s (un "chunk" del modelo) y va
+  1 o 2 s por detrás de la voz.
+- Lo estable no se reescribe nunca. Con la configuración por defecto de
+  Parakeet, lo tentativo llegó siempre vacío.
+- El texto final coincidió palabra por palabra con la transcripción del clip
+  completo en las pruebas en alemán y en inglés.
+
+Este retraso de 1 o 2 s es nuestro punto de partida. Reducirlo es la Fase 4.
+
+## Lo que falta
+
+```ts
+Teleprompter
+├── Captura continua con inicio y parada (Hex sólo graba mientras mantienes el atajo
+│   o durante una reunión)
+├── Pasar ese audio a una sesión de src/transcription/stream.rs dentro del proceso
+│   (hoy sólo la crea /streams, desde fuera, por HTTP)
+├── Un "tablero" de subtítulos: segmentos completados + el parcial en curso,
+│   recortado a las últimas N líneas
+├── Un overlay de varias líneas, con letra grande, fondo semitransparente,
+│   colocable y de tamaño ajustable
+└── Controles: atajo, menú de bandeja y `hex teleprompter start|stop|toggle`
+```
+
+## Arquitectura propuesta
+
+```ts
+Micrófono (src/audio.rs, 16 kHz mono)
+  │  bloques de 10 a 100 ms
+  ▼
+teleprompter::Session              src/teleprompter/session.rs   (nuevo)
+  │  stream.push(samples) + latido (el lease de 10 s no caduca mientras hablas)
+  ▼
+transcription::stream::Stream      src/transcription/stream.rs   (reutilizado)
+  │  ventanas cortadas en pausas -> YieldingStream del motor compartido
+  │  Event::Partial { segment, stable, tentative } / Event::Segment / Event::Final
+  ▼
+teleprompter::board                src/teleprompter/board.rs     (nuevo; copia el patrón
+  │  segmentos cerrados + parcial vivo,                            Board/Publisher/watch de
+  │  recorte a N líneas                                            src/dictation/live_text.rs)
+  ▼
+rune_ui::teleprompter              src/rune_ui/teleprompter.rs   (nuevo; parte de
+     overlay de 2 o 3 líneas: estable en color de texto,           src/rune_ui/live_text.rs)
+     tentativo atenuado, sube al cerrarse cada segmento
+```
+
+Por qué reutilizar `transcription::stream` en vez de escribir otro bucle:
+
+- Ya corta en pausas, mantiene acotadas la memoria y las ventanas, y vuelve a
+  transcribir offline lo que el streaming no pudo.
+- Ya convive con el dictado: si usas el atajo de Hex a la vez, el dictado va
+  primero y los subtítulos se ponen al día después.
+- Sus eventos (`partial`, `segment`) son justo lo que necesita un subtítulo.
+
+Cambios pequeños que necesita:
+
+- Poder crear un `Stream` desde dentro del proceso. `Streams::create(engine,
+  format, selection, owner_token)` ya existe. Habrá que decidir si el
+  teleprompter comparte el registro de `/streams` (máximo 1 stream) o tiene
+  uno propio. Recomiendo compartirlo: sólo hay un motor y dos streams se
+  pelearían por él.
+- Una suscripción interna a los eventos, sin SSE. `Stream::subscribe` ya
+  entrega los eventos en orden.
+- Mantener vivo el lease con un latido desde el bucle de captura, o permitir
+  crear un stream sin lease.
+
+Para no complicar la sincronización con el Hex original, todo lo nuevo va en
+módulos nuevos (`src/teleprompter/`, `src/rune_ui/teleprompter.rs`) y sólo se
+tocan unos pocos puntos de enganche (registro de módulos, Labs, CLI,
+bandeja). Así `git merge upstream/dev` sigue siendo viable.
+
+## Fases
+
+### Fase 0: preparar el fork (de 1 a 2 días)
+
+- Compilar y ejecutar Hex tal cual en tu sistema operativo (`docs/linux.md`,
+  `docs/windows.md`; en macOS, `macos/`). En Linux hace falta el SDK de Vulkan
+  para la GPU.
+- Probar el dictado con **Nemotron 3.5 ASR** y el idioma en `es`, con
+  Labs › Live text encendido. Es el primer contacto real con la latencia y la
+  calidad de los subtítulos en español.
+- Separar el fork del Hex instalado:
+  - Nombre, identificadores y carpeta de datos (`src/app_paths.rs`): Hex usa
+    `~/.local/share/hex`, `~/Library/Application Support/hex` y `%APPDATA%\hex`,
+    además de un bloqueo de instancia única y `local-api.json`.
+  - El actualizador (`src/updater.rs`) apunta a `anoma.ly/hex`. Una
+    compilación desde el código (`Method::Source`) no se actualiza sola, pero
+    un `.app` o un instalador empaquetado sí lo haría, y se reemplazaría por
+    el Hex original. Hay que desactivarlo antes de empaquetar nada.
+  - Los workflows de `.github/` (release, site, AUR, SDK) se disparan con
+    push a `dev` o `production`, ramas que el fork no tiene. Hay que borrarlos
+    o adaptarlos antes de crear esas ramas.
+- Mantener `LICENSE` (MIT) y `THIRD_PARTY_NOTICES.md`.
+
+### Fase 1: prototipo sin tocar Rust, con `/streams` (de 1 a 2 días)
+
+Un cliente pequeño (por ejemplo `tools/caption-client/`, en TypeScript con
+Bun, que el repo ya usa, o en Python):
+
+1. Lee `local-api.json` (puerto y token).
+2. `POST /streams` con `s16le` a 16 kHz.
+3. Graba el micrófono y envía bloques de 100 ms a `POST /streams/{id}/audio`.
+4. Escucha `GET /streams/{id}/events` y pinta los subtítulos en una página
+   web a pantalla completa o en la terminal.
+
+Con esto se mide la latencia real y se prueba la experiencia (cuántas
+líneas, tamaño, cuándo sube una línea) antes de escribir la versión nativa.
+
+Límites: Hex tiene que estar abierto con el modelo cargado por el dictado (en
+Linux y Windows, con el listener activo), sólo hay un stream a la vez y sólo
+hay parciales con GPU y un modelo de streaming.
+
+### Fase 2: modo Teleprompter nativo (de 1 a 2 semanas)
+
+Siguiendo las convenciones del repo (`AGENTS.md`, `docs/features/labs.md`):
+
+1. **Lab `teleprompter`**, apagado por defecto. Se añade a
+   `labs::Feature`, con su fila en `src/rune_ui/labs.rs` y su clave en
+   `hex settings`.
+2. **`src/teleprompter/session.rs`**: abre el micrófono de forma continua
+   (como hace la captura de reuniones), crea el `Stream`, empuja el audio y
+   envía latidos. Se detiene al parar, si el modelo cambia o si se pierde el
+   micrófono.
+3. **`src/teleprompter/board.rs`**: guarda el estado del subtítulo
+   (segmentos cerrados y parcial actual) y avisa a quien lo observe sin
+   bloquear el hilo de audio, igual que `dictation/live_text.rs`.
+4. **`src/rune_ui/teleprompter.rs`**: el overlay.
+   - De 2 a 3 líneas con ajuste de línea. La más nueva abajo y las viejas
+     suben con una animación corta.
+   - Texto estable en `p.text()` y tentativo en `p.faint()`, como en
+     `live_text.rs`. Soporte de derecha a izquierda heredado.
+   - Tamaño de letra, número de líneas, opacidad del fondo y posición
+     (abajo, arriba o libre) configurables.
+   - Deja pasar los clics por defecto, con un modo "mover y redimensionar"
+     que lo hace interactivo.
+5. **Controles**: un atajo propio, una entrada en la bandeja o barra de menú
+   y `hex teleprompter start|stop|toggle|status` en `control::cli`, que
+   cualquier script o agente puede usar.
+6. **Pruebas**: el board, con texto sintético. La sesión, con
+   `HEX_AUDIO_FIXTURE` y un motor falso (`stream_tests.rs` ya trae uno). El
+   overlay, con el renderizado offscreen y los goldens
+   (`HEX_UPDATE_GOLDENS=1 cargo test --locked --bin hex rune_ui`, sólo en
+   Linux).
+7. **Documentación**: `docs/features/teleprompter.md` y una entrada en
+   `docs/features/README.md`.
+
+### Fase 3: pantalla y salida (de 3 a 5 días)
+
+- Una ventana normal y opaca, además del overlay, para capturarla en OBS o
+  mostrarla en otra pantalla.
+- Exportar la sesión a `.srt` o `.vtt` con los tiempos de cada `Segment`
+  (`startMs`/`endMs`). Hex ya exporta subtítulos de reuniones
+  (`labs.subtitle_export`).
+- Guardar la transcripción de cada sesión en el historial.
+
+### Fase 4: menos latencia (investigación, continua)
+
+En orden de coste:
+
+1. **Mostrar ya lo tentativo**: el overlay lo pinta en cuanto llega.
+2. **Chunks más cortos**: `HEX_STREAM_CHUNK_MS` ya cambia el chunk y el
+   contexto derecho de Parakeet (por defecto 1040 ms;
+   `src/transcription/gguf_session.rs`). Hay que medir latencia y precisión
+   con 560, 320 y 160 ms. Para Nemotron habrá que ver qué opciones expone
+   transcribe.cpp.
+3. **Ajustar las pausas** para subtítulos: pausa de 600 ms y trozo mínimo de
+   3 s en `pause_segmenter.rs`. Cerrar líneas antes hace que suban antes.
+4. **Sin GPU o con modelos sin streaming** (Parakeet v3, el más preciso en
+   español): volver a decodificar los últimos 5 a 8 s cada 300 a 500 ms y
+   fijar las palabras en las que coinciden dos pasadas seguidas (el "local
+   agreement" de whisper_streaming). Parakeet v3 va unas 33 veces más rápido
+   que el tiempo real en GPU, así que cabe en el presupuesto.
+5. **macOS**: `SpeechTranscriber` de Apple da resultados "volátiles" al
+   instante y gasta muy poca CPU (`docs/plans/meeting-live-transcription.md`).
+   Requiere un puente Swift en streaming, que hoy no existe:
+   `apple_speech.swift` sólo transcribe búferes completos.
+
+### Fase 5 (opcional): teleprompter con guion
+
+Si además quieres leer un guion: cargas un texto, MicroPrompt alinea lo que
+dices con el guion (coincidencia aproximada de palabras sobre los segmentos
+estables), lo desplaza solo y marca por dónde vas. Usa la misma tubería de
+las fases 1 a 4. Sólo cambian el board y la vista.
+
+## Riesgos
+
+- **Sin GPU no hay parciales.** Nemotron y Parakeet Unified sólo hacen
+  streaming en Metal o Vulkan. Windows ARM64 es sólo CPU. Sin GPU, cada
+  línea aparece entera al terminar la frase (tras la pausa), hasta que exista
+  la Fase 4.4.
+- **Calidad en español.** Hex recomienda Parakeet v3 para español, pero no
+  hace streaming. Nemotron 3.5 sí lo hace, con más errores (3,05 % de WER en
+  LibriSpeech frente a 1,95 % de Parakeet v3, y bastante peor en FLEURS). Hay
+  que medirlo en español con tu voz y tu micrófono.
+- **Palabras perdidas tras pausas largas** (#324, #338, #1101). El dictado lo
+  mitiga con `PauseCap`. En `/streams` las ventanas se cortan en las pausas,
+  así que debería afectar menos, pero hay que comprobarlo.
+- **Tamaño del código**: unas 317.000 líneas de Rust y un upstream muy activo
+  (más de 1.500 commits). Por eso conviene aislar los cambios en módulos
+  nuevos y sincronizar con `git fetch upstream && git merge upstream/dev`.
+- **Dependencias git**: Rune y el fork de transcribe.cpp vienen de
+  `github.com/anomalyco/*`. Hoy son públicos. Si desaparecieran, habría que
+  copiarlos a tu cuenta.
+
+## Decisiones abiertas
+
+1. Sistema operativo principal y si tienes GPU (decide si hay parciales desde
+   el primer día).
+2. Idioma: ¿sólo español, o también inglés y otros?
+3. ¿Subtítulos de lo que dices (este plan) o teleprompter con guion (Fase 5)?
+   ¿O las dos cosas?
+4. ¿Dónde se ven? ¿Overlay encima de todo, ventana para OBS o segunda
+   pantalla?

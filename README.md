@@ -1,3 +1,21 @@
+# MicroPrompt
+
+MicroPrompt es un fork de [Hex](https://github.com/anomalyco/hex) (MIT) para
+construir un teleprompter que muestre como subtítulos, en vivo y en local, lo
+que vas diciendo. El plan está en
+[`docs/plans/teleprompter.md`](docs/plans/teleprompter.md).
+
+Para traer cambios del proyecto original:
+
+```sh
+git remote add upstream https://github.com/anomalyco/hex.git  # una vez
+git fetch upstream && git merge upstream/dev
+```
+
+Lo que sigue es el README original de Hex.
+
+---
+
 # Hex
 
 Hex is local voice dictation for Mac, Windows and Linux. Hold a key, speak, and
