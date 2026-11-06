@@ -15,7 +15,11 @@
      font      font family (default system UI)
      weight    font weight (default 600)
      transparent=1  transparent background with an outline, for OBS
-     status=0  hide the status line */
+     status=0  hide the status line
+     With speakers (captions.py --speakers), each turn starts a new line
+     under its speaker's name:
+     who=0     hide the names (colours still tell turns apart with tint=1)
+     tint=1    colour each turn's text with its speaker's colour */
   :root {
     --size: 56px;
     --lines: 3;
@@ -73,6 +77,15 @@
   body.left #text { text-align: left; }
   .done { opacity: 0.78; }
   .tentative { color: var(--dim); }
+  .turn { display: block; }
+  .who {
+    font-size: 0.58em;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    margin-right: 0.45em;
+    vertical-align: 0.16em;
+  }
+  body.nowho .who { display: none; }
   #status {
     position: fixed;
     top: 10px;
@@ -126,6 +139,11 @@
   if (position === "top" || position === "middle") document.body.classList.add(position);
   if (params.get("transparent") === "1") document.body.classList.add("transparent");
   if (params.get("status") === "0") document.body.classList.add("nostatus");
+  if (params.get("who") === "0") document.body.classList.add("nowho");
+  const tint = params.get("tint") === "1";
+  // One colour per speaker number, readable on a dark background.
+  const PALETTE = ["#7dd3fc", "#fca5a5", "#86efac", "#fcd34d", "#c4b5fd", "#f9a8d4", "#fdba74", "#5eead4"];
+  const colour = (speaker) => PALETTE[(speaker - 1) % PALETTE.length];
 
   const text = document.getElementById("text");
   const status = document.getElementById("status");
@@ -138,15 +156,64 @@
     return node;
   }
 
-  function render(state) {
+  // The line being spoken: its fixed words, then its provisional ones.
+  function live(state, after) {
     const nodes = [];
-    const done = state.lines.join(" ");
-    if (done) nodes.push(span("done", done));
     const stable = state.stable.trim();
-    if (stable) nodes.push(span("stable", (done ? " " : "") + stable));
+    if (stable) nodes.push(span("stable", (after ? " " : "") + stable));
     const tentative = state.tentative.trim();
-    if (tentative) nodes.push(span("tentative", (done || stable ? " " : "") + tentative));
-    text.replaceChildren(...nodes);
+    if (tentative) nodes.push(span("tentative", (after || stable ? " " : "") + tentative));
+    return nodes;
+  }
+
+  // One block per turn: consecutive lines of the same speaker share it. A
+  // line whose speaker isn't known yet stays with the turn before it.
+  function turns(state) {
+    const blocks = [];
+    const open = (speaker, name) => {
+      const block = { speaker, name, nodes: [] };
+      blocks.push(block);
+      return block;
+    };
+    let current = null;
+    for (const line of state.lines) {
+      if (!current || (line.speaker != null && line.speaker !== current.speaker)) {
+        current = open(line.speaker, line.name);
+      } else if (current.speaker == null && line.speaker != null) {
+        current.speaker = line.speaker;
+        current.name = line.name;
+      }
+      current.nodes.push(span("done", (current.nodes.length ? " " : "") + line.text.trim()));
+    }
+    if (state.stable.trim() || state.tentative.trim()) {
+      if (!current || (state.speaker != null && state.speaker !== current.speaker)) {
+        current = open(state.speaker, state.name);
+      }
+      current.nodes.push(...live(state, current.nodes.length > 0));
+    }
+    return blocks.map((block) => {
+      const node = document.createElement("span");
+      node.className = "turn";
+      if (block.speaker != null) {
+        const who = span("who", block.name || "");
+        who.style.color = colour(block.speaker);
+        node.append(who);
+        if (tint) node.style.color = colour(block.speaker);
+      }
+      node.append(...block.nodes);
+      return node;
+    });
+  }
+
+  function render(state) {
+    const lines = state.lines.map((line) => (typeof line === "string" ? { text: line } : line));
+    state = { ...state, lines };
+    if ((state.info || {}).speakers) {
+      text.replaceChildren(...turns(state));
+    } else {
+      const done = lines.map((line) => line.text.trim()).join(" ");
+      text.replaceChildren(...(done ? [span("done", done)] : []), ...live(state, Boolean(done)));
+    }
 
     const info = state.info || {};
     const parts = [state.status];

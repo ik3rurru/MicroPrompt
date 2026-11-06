@@ -285,6 +285,70 @@ En orden de coste:
    Requiere un puente Swift en streaming, que hoy no existe:
    `apple_speech.swift` sólo transcribe búferes completos.
 
+### Distinguir interlocutores
+
+Pregunta: ¿pueden los subtítulos decir quién habla? Sí, en local, y Hex ya
+trae casi todo.
+
+Lo que ya existe:
+
+- **Reuniones**: Hex separa "You" (micrófono) de "Them" (audio del
+  sistema) por la fuente, sin modelo.
+- **Upstream** (sin fusionar en `dev`, 4 de noviembre de 2026):
+  - estudio `docs/research/meeting-speakers.md` en la rama
+    `speaker-diarization-spike`;
+  - Lab "Speakers in meetings" en la rama `meeting-speakers-lab`
+    (`src/meeting/speakers.rs`).
+
+  Ambos diarizan "Them" **después** de la reunión con Sortformer v2.1 sobre
+  `transcribe_cpp::DiarizeSession`, en trozos de 10 min que solapan 1 min.
+- **transcribe.cpp 0.4.1** (la versión que fija Hex) ejecuta Sortformer:
+  - hasta 4 voces;
+  - presets de latencia de 1 a 30 s;
+  - en GPU.
+
+  Su API sólo diariza una grabación entera de una vez. El estado de
+  streaming del modelo (caché de hablantes y FIFO) existe por dentro, pero
+  no está expuesto.
+
+Opciones, de menos a más trabajo:
+
+```ts
+Quién habla
+├── A. Por fuente o canal: un micrófono por persona, o micrófono frente a audio del sistema
+│   └── exacto y sin modelo; con /streams hace falta un stream por canal (hoy Hex admite 1) → Fase 2 nativa
+├── B. Sortformer por lotes sobre el audio reciente (hecho en el prototipo: --speakers)
+│   └── tools/microprompt-captions/speakers.py, con transcribe-cpp de PyPI, el mismo modelo
+├── C. Sortformer en streaming de verdad: exponer SortformerStreamState en la API C de transcribe.cpp
+│   └── etiqueta a ~1 s con el preset low_latency; trabajo en C++ en el fork de transcribe.cpp
+└── D. Huellas de voz (CAM++ o ECAPA) para reconocer a alguien entre sesiones
+    └── upstream: el vecino más cercano acierta el 81–94 % de las veces, pero ningún umbral fijo
+        rechaza a un desconocido → sugerir nombres, no asignarlos solos
+```
+
+Lo que se aprendió al construir B (medido con voces reales, en CPU):
+
+- Diarizar **toda la conversación de una vez** acertó todos los turnos (16 de
+  16, con cualquier preset).
+- Una **ventana que se desliza en cada pasada** confunde voces cuando corta a
+  alguien a media frase y hay 4 voces dentro (entre 17 y 27 de 32 turnos con
+  ventanas de 30 y 60 s).
+- Pegar **muestras cortas de cada voz** delante de una ventana corta
+  ("anclas") tampoco funcionó: entre 8 y 14 de 16.
+- Lo que funciona son **bloques con inicio fijo**: el audio crece hasta 120 s
+  y el bloque siguiente solapa 60 s. Las voces que no hablaron en el solape
+  van como referencia al principio del bloque nuevo. Resultados en
+  [`tools/microprompt-captions/README.md`](../../tools/microprompt-captions/README.md).
+
+Para la Fase 2 nativa:
+
+- Portar `SpeakerTracker` a Rust sobre `transcribe_cpp::DiarizeSession`,
+  junto a `src/meeting/speakers.rs` de upstream si se fusiona.
+- Usar el mismo artefacto: `SPEAKER_MODEL_ARTIFACT`, descargado sólo con el
+  Lab activo.
+- Si la latencia de etiqueta (al cerrarse cada frase) se queda corta,
+  abordar la opción C en el fork de transcribe.cpp.
+
 ### Fase 5 (opcional): teleprompter con guion
 
 Si además quieres leer un guion: cargas un texto, MicroPrompt alinea lo que

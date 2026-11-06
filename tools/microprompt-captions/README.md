@@ -123,6 +123,83 @@ más errores y hasta un 20 % de GPU, sin acelerar el final del dictado
 (`docs/features/dictation.md`). Para subtítulos lo que cuenta es la latencia
 de los parciales, que aún no se ha medido.
 
+## Distinguir quién habla (`--speakers`)
+
+Con `--speakers`, cada frase lleva el nombre de quien la dijo. En la página,
+cada turno empieza en una línea nueva con su nombre en color; el `.srt` y el
+`.txt` también lo incluyen.
+
+```powershell
+py -m pip install transcribe-cpp                  # una vez
+py captions.py --speakers --open                  # "Hablante 1", "Hablante 2"…
+py captions.py --names "Iker,Ana" --open          # nombres por orden de aparición
+py captions.py --enroll Iker=iker.wav --open      # tu voz, reconocida siempre como "Iker"
+```
+
+- **Modelo**: Sortformer v2.1 de NVIDIA, el mismo artefacto que eligió
+  upstream para su Lab "Speakers in meetings". Funciona con transcribe.cpp, el
+  motor que ya usa Hex, pero en este proceso: Hex no cambia. La primera vez
+  se descargan 139 MB, que se comprueban por SHA-256, en
+  `%LOCALAPPDATA%\MicroPrompt\models`. También se puede pasar una ruta:
+  `--speakers C:\ruta\modelo.gguf`. Por defecto corre en la GPU (Vulkan en
+  tu RTX); `--speakers-backend cpu` lo fuerza en la CPU.
+- **Cuándo aparece la etiqueta**: al cerrarse cada frase (en la pausa) se
+  diariza el audio y la frase recibe la voz que más suena en ella. Mientras
+  hablas, la línea en curso toma la voz provisional en cuanto el modelo
+  reconoce a alguien conocido, como mucho cada 1,5 s.
+- **Registrar tu voz** (`--enroll NOMBRE=fichero.wav`): basta un WAV de 5 a
+  10 s con sólo tu voz (graba con la grabadora de Windows y exporta a WAV).
+  Esa voz siempre se llama así, aunque pases minutos sin hablar. Se puede
+  repetir para varias personas.
+- **Página**: `?who=0` oculta los nombres y `?tint=1` pinta el texto de cada
+  turno con el color de su hablante.
+
+### Cómo funciona
+
+transcribe.cpp diariza grabaciones enteras; no tiene una API incremental. El
+script diariza el **bloque actual**: todo el audio desde un punto fijo hasta
+ahora, con un máximo de `--speakers-block` segundos (120 por defecto).
+Sortformer numera las voces por orden de llegada, así que dentro de un bloque
+cada pasada coincide con la anterior.
+
+Al llenarse un bloque empieza otro, que comparte los últimos 60 s con el
+anterior. Las voces que hablaron en esa parte compartida conservan su número
+por coincidencia. Las demás voces conocidas se ponen delante del bloque
+nuevo, con unos segundos de su propia voz, para que el modelo las reconozca
+si vuelven.
+
+Las frases que se acumulan mientras una pasada está en marcha se etiquetan
+todas juntas en la siguiente.
+
+### Medido aquí (CPU, sin GPU, voces reales)
+
+Conversaciones montadas con voces reales de los `samples/` de transcribe.cpp
+(JFK y hablantes de FLEURS en español, alemán y japonés), con turnos de
+2,5 a 4 s y pausas de 0,7 s. Hex está simulado (`mock_hex.py`) y Sortformer
+es el real:
+
+| Conversación | Voces | Bloque | Turnos bien | Pasada (mediana) |
+| --- | ---: | --- | ---: | ---: |
+| 62 s, 16 turnos | 4 | 120 s / 60 s | 16 de 16 | 1,6 s |
+
+(Las conversaciones de 2 y 4,5 minutos, con relevos de bloque y una voz que
+vuelve tras minutos callada, se están midiendo y se añadirán aquí.)
+
+Sin GPU, cada pasada sobre 120 s de audio tarda unos 5 s en la CPU usada
+aquí (unas 22 veces el tiempo real). En tu RTX debería ser mucho más rápido,
+pero aún no se ha medido: el resumen final del script lo indica (`diarización:
+… s por pasada`).
+
+### Límites
+
+- Sortformer v2.1 distingue **hasta 4 voces a la vez**. Con más, mezcla dos.
+- Una frase en la que hablan dos personas sin pausa entre ellas se atribuye a
+  quien más habla.
+- Las voces se reconocen dentro de una sesión. Para reconocerte en todas,
+  registra tu voz con `--enroll`.
+- Es audio de un solo micrófono. Si cada persona tiene su propio micrófono,
+  separar por canal sería exacto y no necesitaría modelo (está en el plan).
+
 ## Límites (los de `/streams`)
 
 - Sólo hay un stream a la vez. Un segundo cliente recibe "Ya hay otro

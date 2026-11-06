@@ -11,6 +11,9 @@ text as subtitles:
 - in the terminal with --console;
 - and, once you stop, as a transcript (--txt) and timed subtitles (--srt).
 
+With --speakers it also tells voices apart (speakers.py: Sortformer through
+transcribe.cpp, run locally) and names who said each line.
+
 Requirements: Python 3.10+, numpy, and sounddevice for the microphone.
 Hex must be running, enabled, and holding a model (Nemotron 3.5 ASR streams
 Spanish on a GPU; see README.md).
@@ -372,6 +375,8 @@ class Captions:
         self.version = 0
         self.segments: dict[int, dict] = {}
         self.partial: dict | None = None
+        self.speakers: dict[int, dict] = {}  # segment index -> {"speaker", "name"}
+        self.speaking: dict | None = None  # provisional voice of the line being spoken
         self.info: dict = {}
         self.status = "conectando"
         self.error: str | None = None
@@ -390,6 +395,19 @@ class Captions:
         with self.lock:
             self.info = info
             self._changed()
+
+    def set_speaker(self, index: int, number: int | None, name: str | None, provisional: bool) -> None:
+        with self.lock:
+            label = {"segment": index, "speaker": number, "name": name}
+            if provisional:
+                self.speaking = label
+            else:
+                self.speakers[index] = label
+            self._changed()
+
+    def speaker_name(self, index: int) -> str | None:
+        with self.lock:
+            return (self.speakers.get(index) or {}).get("name")
 
     def apply(self, event: dict) -> None:
         kind = event.get("type")
@@ -416,15 +434,27 @@ class Captions:
 
     def snapshot(self) -> dict:
         with self.lock:
-            done = [self.segments[i]["text"] for i in sorted(self.segments) if self.segments[i]["text"].strip()]
+            done = [
+                {
+                    "text": self.segments[i]["text"],
+                    "speaker": (self.speakers.get(i) or {}).get("speaker"),
+                    "name": (self.speakers.get(i) or {}).get("name"),
+                }
+                for i in sorted(self.segments)
+                if self.segments[i]["text"].strip()
+            ]
             partial = self.partial
             if partial and partial.get("segment") in self.segments:
                 partial = None
+            speaking = self.speaking if partial and self.speaking and \
+                self.speaking["segment"] == partial.get("segment") else None
             return {
                 "version": self.version,
                 "lines": done[-self.keep :],
                 "stable": (partial or {}).get("stable", ""),
                 "tentative": (partial or {}).get("tentative", ""),
+                "speaker": (speaking or {}).get("speaker"),
+                "name": (speaking or {}).get("name"),
                 "status": self.status,
                 "error": self.error,
                 "info": self.info,
@@ -565,8 +595,9 @@ class Console:
     """One live line that rewrites itself, and each finished phrase on its
     own line above it."""
 
-    def __init__(self, enabled: bool):
+    def __init__(self, enabled: bool, speakers: bool = False):
         self.enabled = enabled
+        self.speakers = speakers  # phrases print when their voice is known (`labelled`)
         self.color = sys.stdout.isatty()
         if self.color and sys.platform == "win32":
             os.system("")  # turns on ANSI escapes in the Windows console
@@ -591,9 +622,17 @@ class Console:
                 if self.color:
                     line = line[:cut] + "\x1b[2m" + line[cut:] + "\x1b[0m"
                 self._live(line)
-            elif kind == "segment" and event.get("text", "").strip():
+            elif kind == "segment" and event.get("text", "").strip() and not self.speakers:
                 self._live("")
                 print(f"[{event['startMs'] / 1000:6.1f}s] {event['text']}", flush=True)
+
+    def labelled(self, segment: dict, name: str | None) -> None:
+        if not self.enabled or not segment.get("text", "").strip():
+            return
+        with self.lock:
+            self._live("")
+            who = f"{name}: " if name else ""
+            print(f"[{segment['startMs'] / 1000:6.1f}s] {who}{segment['text']}", flush=True)
 
     def _live(self, line: str) -> None:
         if self.color:
@@ -620,17 +659,37 @@ def srt_time(ms: float) -> str:
     return f"{hours:02}:{minutes:02}:{seconds:02},{ms:03}"
 
 
-def write_srt(path: Path, segments: list[dict]) -> int:
+def write_srt(path: Path, segments: list[dict], names: dict[int, str] | None = None) -> int:
     blocks = []
     for segment in segments:
         text = segment.get("text", "").strip()
         if not text:
             continue
+        name = (names or {}).get(segment["segment"])
+        if name:
+            text = f"{name}: {text}"
         blocks.append(
             f"{len(blocks) + 1}\n{srt_time(segment['startMs'])} --> {srt_time(segment['endMs'])}\n{text}\n"
         )
     path.write_text("\n".join(blocks), encoding="utf-8")
     return len(blocks)
+
+
+def transcript(segments: list[dict], names: dict[int, str] | None = None) -> str:
+    """The text, one paragraph per turn when voices are named."""
+    if not names:
+        return " ".join(s["text"].strip() for s in segments if s.get("text", "").strip())
+    turns: list[tuple[str | None, list[str]]] = []
+    for segment in segments:
+        text = segment.get("text", "").strip()
+        if not text:
+            continue
+        name = names.get(segment["segment"])
+        if turns and turns[-1][0] == name:
+            turns[-1][1].append(text)
+        else:
+            turns.append((name, [text]))
+    return "\n\n".join(f"{name}: {' '.join(texts)}" if name else " ".join(texts) for name, texts in turns)
 
 
 # --------------------------------------------------------------------------
@@ -648,12 +707,16 @@ EXPLANATIONS = {
 
 
 class Session:
-    def __init__(self, args: argparse.Namespace):
+    def __init__(self, args: argparse.Namespace, diarizer=None):
         self.args = args
         self.audio: "queue.Queue[np.ndarray]" = queue.Queue(maxsize=500)
         self.captions = Captions()
         self.timing = Timing()
-        self.console = Console(args.console)
+        self.console = Console(args.console, speakers=bool(args.speakers))
+        self.diarizer = diarizer  # tests pass a stand-in; else Sortformer
+        self.timeline = None
+        self.speakers = None  # the SpeakerWorker, with --speakers
+        self.last_segment_end_ms = 0
         self.stop_capture = threading.Event()
         self.stop_events = threading.Event()
         self.ended = threading.Event()
@@ -661,8 +724,52 @@ class Session:
         self.failure: str | None = None
         self.client = HexClient.discover(Path(args.discovery) if args.discovery else default_discovery_path())
 
+    def _start_speakers(self) -> bool:
+        """Loads the speaker model and enrolled voices before the stream
+        opens, so its lease never waits on them."""
+        import speakers
+
+        args = self.args
+        diarizer = self.diarizer
+        if diarizer is None:
+            model = speakers.ensure_model(args.speakers, self.console.note)
+            diarizer = speakers.SortformerDiarizer(model, backend=args.speakers_backend)
+        self.timeline = speakers.Timeline()
+        names = [n.strip() for n in (args.names or "").split(",") if n.strip()]
+        tracker = speakers.SpeakerTracker(diarizer, self.timeline, names=names, block_s=args.speakers_block)
+        for entry in args.enroll or []:
+            name, _, path = entry.partition("=")
+            if not name or not path:
+                self.console.note(f"--enroll espera NOMBRE=fichero.wav, no «{entry}».")
+                return False
+            samples, rate = read_wav(Path(path))
+            if rate != SAMPLE_RATE:
+                samples = Resampler(rate).process(samples)
+            try:
+                tracker.enroll(name.strip(), samples)
+            except ValueError as error:
+                self.console.note(f"No puedo registrar la voz: {error}")
+                return False
+        self.speakers = speakers.SpeakerWorker(tracker, self._labelled)
+        self.tracker = tracker
+        describe = getattr(diarizer, "describe", lambda: "diarizador")()
+        enrolled = f"; voces registradas: {', '.join(v.name for v in tracker.enrolled)}" if tracker.enrolled else ""
+        self.console.note(f"Hablantes: {describe}{enrolled}")
+        return True
+
+    def _labelled(self, index: int, voice, provisional: bool) -> None:
+        number = voice.number if voice else None
+        name = voice.name if voice else None
+        self.captions.set_speaker(index, number, name, provisional)
+        if not provisional:
+            segment = next((s for s in self.captions.ordered_segments() if s["segment"] == index), None)
+            if segment:
+                self.console.labelled(segment, name)
+
     def run(self) -> int:
         args = self.args
+        if args.speakers and not self._start_speakers():
+            return 2
         if not args.no_page:
             server = serve_page(self.captions, args.host, args.port)
             url = f"http://{args.host}:{server.server_address[1]}/"
@@ -689,6 +796,7 @@ class Session:
             "model": created.get("model"),
             "language": created.get("language"),
             "partials": created.get("partials"),
+            "speakers": bool(self.speakers),
         }
         self.captions.set_info(info)
         self.console.note(
@@ -752,6 +860,9 @@ class Session:
             try:
                 self.client.push(pcm)
                 self.timing.sent(samples.size)
+                if self.timeline is not None:
+                    # The same audio, in the same order, as Hex's stream clock.
+                    self.timeline.append(samples)
                 return True
             except HexError as error:
                 if error.code == "stream-backlog-full" and attempt < 19:
@@ -777,6 +888,11 @@ class Session:
                 self.captions.apply(event)
                 self.console.event(event)
                 kind = event.get("type")
+                if self.speakers and kind == "segment":
+                    self.speakers.segment(event["segment"], event["startMs"], event["endMs"])
+                    self.last_segment_end_ms = event["endMs"]
+                elif self.speakers and kind == "partial" and (event.get("stable") or event.get("tentative")):
+                    self.speakers.speaking(event["segment"], self.last_segment_end_ms)
                 if kind == "final":
                     self.final = event
                     break
@@ -805,10 +921,28 @@ class Session:
                 self.failure = self.failure or f"finish falló: {error}"
             self.ended.wait(5)
         self.stop_events.set()
+        names = None
+        if self.speakers:
+            if self.final:
+                # The final's segments include any the events had not sent yet.
+                known = {s["segment"] for s in self.captions.ordered_segments()}
+                for segment in self.final.get("segments", []):
+                    if segment["segment"] not in known and segment.get("text", "").strip():
+                        self.speakers.segment(segment["segment"], segment["startMs"], segment["endMs"])
+            self.console.note("Esperando a las etiquetas de hablante que faltan…")
+            if not self.speakers.drain(120):
+                self.console.note("Aviso: algunas frases se quedaron sin hablante (la diarización no terminó a tiempo).")
+            self.speakers.stop()
+            names = {}
+            for segment in (self.final or {}).get("segments") or self.captions.ordered_segments():
+                name = self.captions.speaker_name(segment["segment"])
+                if name:
+                    names[segment["segment"]] = name
         self.captions.set_status("terminado" if self.final else "error", self.failure)
 
         segments = (self.final or {}).get("segments") or self.captions.ordered_segments()
-        text = (self.final or {}).get("text") or " ".join(s["text"] for s in segments)
+        text = transcript(segments, names) if names else (
+            (self.final or {}).get("text") or " ".join(s["text"] for s in segments))
         self.console.note("")
         if self.failure and not self.final:
             self.console.note(f"El stream acabó con error: {self.failure}")
@@ -817,11 +951,16 @@ class Session:
         self.console.note("— Latencia —")
         for line in self.timing.summary():
             self.console.note("  " + line)
+        if self.speakers:
+            voices = len(self.tracker.voices)
+            self.console.note(f"— Hablantes: {voices} {'voz' if voices == 1 else 'voces'} —")
+            for line in self.tracker.stats.summary():
+                self.console.note("  " + line)
         if args.txt:
             Path(args.txt).write_text(text.strip() + "\n", encoding="utf-8")
             self.console.note(f"Guardado {args.txt}")
         if args.srt:
-            written = write_srt(Path(args.srt), segments)
+            written = write_srt(Path(args.srt), segments, names)
             self.console.note(f"Guardado {args.srt} ({written} subtítulos)")
         if args.linger and not args.no_page:
             self.console.note(f"La página sigue abierta {args.linger} s más.")
@@ -829,7 +968,7 @@ class Session:
         return 0 if self.final else 1
 
 
-def main(argv: list[str] | None = None) -> int:
+def main(argv: list[str] | None = None, diarizer=None) -> int:
     parser = argparse.ArgumentParser(description="Subtítulos en vivo de tu voz sobre /streams de Hex.")
     parser.add_argument("--language", help="idioma que debe tener cargado Hex (p. ej. es); si no, el que tenga")
     parser.add_argument("--model", help="modelo que debe tener cargado Hex (p. ej. nemotron_3_5_asr)")
@@ -846,7 +985,19 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--srt", help="guarda los subtítulos con tiempos en este fichero .srt")
     parser.add_argument("--discovery", help="ruta de local-api.json (por defecto la de Hex)")
     parser.add_argument("--linger", type=float, default=0, help="segundos que la página sigue viva al terminar")
+    voices = parser.add_argument_group("hablantes (requiere: pip install transcribe-cpp)")
+    voices.add_argument("--speakers", nargs="?", const="auto", metavar="MODELO",
+                        help="distingue quién habla; sin ruta descarga Sortformer v2.1 (139 MB) la primera vez")
+    voices.add_argument("--names", help="nombres por orden de aparición, separados por comas: \"Iker,Ana\"")
+    voices.add_argument("--enroll", action="append", metavar="NOMBRE=WAV",
+                        help="registra una voz con nombre a partir de una grabación suya (repetible)")
+    voices.add_argument("--speakers-backend", default="auto",
+                        help="dónde corre Sortformer: auto (GPU si hay), vulkan, cuda, metal o cpu")
+    voices.add_argument("--speakers-block", type=float, default=120.0,
+                        help="segundos de audio que ve cada pasada (por defecto 120)")
     args = parser.parse_args(argv)
+    if (args.names or args.enroll) and not args.speakers:
+        args.speakers = "auto"
 
     if args.list_devices:
         try:
@@ -855,7 +1006,7 @@ def main(argv: list[str] | None = None) -> int:
             raise SystemExit(f"sounddevice no está disponible: {error}")
         print(sd.query_devices())
         return 0
-    return Session(args).run()
+    return Session(args, diarizer).run()
 
 
 if __name__ == "__main__":
