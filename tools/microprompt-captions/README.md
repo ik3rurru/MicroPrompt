@@ -178,12 +178,18 @@ Conversaciones montadas con voces reales de los `samples/` de transcribe.cpp
 2,5 a 4 s y pausas de 0,7 s. Hex está simulado (`mock_hex.py`) y Sortformer
 es el real:
 
-| Conversación | Voces | Bloque | Turnos bien | Pasada (mediana) |
+| Conversación | Voces | Bloque / solape | Turnos bien | Pasada (mediana) |
 | --- | ---: | --- | ---: | ---: |
 | 62 s, 16 turnos | 4 | 120 s / 60 s | 16 de 16 | 1,6 s |
+| 132 s, 32 turnos; una voz vuelve tras ~110 s | 4 | 120 s / 60 s | 32 de 32 | 2,7 s |
+| 266 s, 64 turnos; una voz vuelve tras ~4 min | 4 | 120 s / 60 s | 64 de 64 | 3,4 s |
+| 266 s, 64 turnos | 4 | 60 s / 30 s | 50 de 64 | 1,8 s |
 
-(Las conversaciones de 2 y 4,5 minutos, con relevos de bloque y una voz que
-vuelve tras minutos callada, se están midiendo y se añadirán aquí.)
+Bloques más cortos salen peores: cortan la conversación más a menudo, y el
+modelo se confunde al empezar cada bloque. No bajes `--speakers-block` de
+120 s salvo que la GPU no dé abasto. Son voces de grabaciones distintas
+montadas por turnos, no una conversación real en una sala con un solo
+micrófono; tu prueba en Windows es la que cuenta.
 
 Sin GPU, cada pasada sobre 120 s de audio tarda unos 5 s en la CPU usada
 aquí (unas 22 veces el tiempo real). En tu RTX debería ser mucho más rápido,
