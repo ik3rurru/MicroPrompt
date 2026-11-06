@@ -1,7 +1,10 @@
 # MicroPrompt: teleprompter de subtítulos en vivo
 
-Estado: plan, nada implementado todavía. Escrito el 6 de noviembre de 2026
-sobre Hex `dev` en `49de3e16` (v3.3.0).
+Estado: plan. La Fase 1 (prototipo) está en
+[`tools/microprompt-captions/`](../../tools/microprompt-captions/README.md),
+probada sólo contra un Hex simulado. Escrito el 6 de noviembre de 2026 sobre
+Hex `dev` en `49de3e16` (v3.3.0). Equipo de pruebas: Windows x64 con una
+NVIDIA RTX 5070 Ti.
 
 ## Qué queremos
 
@@ -120,13 +123,52 @@ módulos nuevos (`src/teleprompter/`, `src/rune_ui/teleprompter.rs`) y sólo se
 tocan unos pocos puntos de enganche (registro de módulos, Labs, CLI,
 bandeja). Así `git merge upstream/dev` sigue siendo viable.
 
+## Equipo de pruebas: Windows x64 con RTX 5070 Ti
+
+- **Hay parciales.** En Windows x64 Hex transcribe en la GPU con Vulkan 1.2,
+  que viene con el driver de NVIDIA (`docs/windows.md`). Sólo ARM64 va por CPU.
+- **Hex ya se midió en esta misma GPU**, con Parakeet Unified English
+  (`docs/features/dictation.md`, 19 de octubre de 2026):
+  - el texto final llegó 55 a 93 ms después de soltar (clips de 10 a 131 s),
+    frente a 82 a 873 ms transcribiendo el clip completo;
+  - la GPU estuvo ocupada sólo un 3 a 3,6 % del tiempo y el proceso usó
+    unos 214 MB;
+  - con chunks de 560 y 160 ms hubo más errores y hasta un 20 % de GPU, sin
+    acelerar el final.
+
+  Nemotron 3.5 en español no se ha medido en Windows: sólo en Linux con una
+  Radeon 8060S, con un parcial cada 1,12 s.
+- **Para la Fase 1 basta el Hex oficial**: `HexSetup.exe` x64. `/streams`
+  está desde la 3.0.0 y Nemotron 3.5 ASR desde la 3.1.2. Ese Hex se
+  actualiza solo desde el canal Dev.
+- **Para compilar el fork** (Fases 0 y 2):
+  - `scripts/setup-windows.ps1` instala lo que falte: Visual Studio C++ Build
+    Tools, CMake y Rust con MSVC.
+  - El SDK de Vulkan (`VULKAN_SDK`) es necesario para la GPU.
+  - Después: `cargo run -- app`.
+  - Una compilación así se identifica como `Method::Source` y no se actualiza
+    sola. El instalador sí lo haría (`Method::Direct`).
+- **Datos compartidos con el Hex instalado**:
+  - `%APPDATA%\hex`: ajustes, historial y `local-api.json`.
+  - `%LOCALAPPDATA%\hex`: logs y modelos.
+  - Un evento con nombre que impide abrir dos copias.
+
+  El fork tiene que renombrar todo esto (Fase 0) antes de convivir con Hex.
+- **Riesgo en los overlays de Windows**: `docs/windows.md` (22 de octubre)
+  dice que la app Rune "nunca se ha ejecutado en Windows". Las versiones
+  3.0 a 3.3 traen arreglos de Windows, así que probablemente está
+  desactualizado. Aun así, el HUD transparente ha fallado en algunos
+  equipos: se veía negro (#499) o no se veía (#510), y sólo DX12 compone
+  bien la transparencia. Por eso la Fase 1 muestra los subtítulos en una
+  página web y el overlay nativo queda para la Fase 2.
+
 ## Fases
 
 ### Fase 0: preparar el fork (de 1 a 2 días)
 
-- Compilar y ejecutar Hex tal cual en tu sistema operativo (`docs/linux.md`,
-  `docs/windows.md`; en macOS, `macos/`). En Linux hace falta el SDK de Vulkan
-  para la GPU.
+- Compilar y ejecutar el fork tal cual en Windows (`docs/windows.md`:
+  `scripts/setup-windows.ps1`, el SDK de Vulkan y `cargo run -- app`).
+  Comprobar en **Settings › Speech engine** que usa la RTX 5070 Ti.
 - Probar el dictado con **Nemotron 3.5 ASR** y el idioma en `es`, con
   Labs › Live text encendido. Es el primer contacto real con la latencia y la
   calidad de los subtítulos en español.
@@ -143,19 +185,31 @@ bandeja). Así `git merge upstream/dev` sigue siendo viable.
     o adaptarlos antes de crear esas ramas.
 - Mantener `LICENSE` (MIT) y `THIRD_PARTY_NOTICES.md`.
 
-### Fase 1: prototipo sin tocar Rust, con `/streams` (de 1 a 2 días)
+### Fase 1: prototipo sin tocar Rust, con `/streams` (hecho; falta medir en Windows)
 
-Un cliente pequeño (por ejemplo `tools/caption-client/`, en TypeScript con
-Bun, que el repo ya usa, o en Python):
+[`tools/microprompt-captions/`](../../tools/microprompt-captions/README.md),
+en Python con numpy y sounddevice:
 
 1. Lee `local-api.json` (puerto y token).
-2. `POST /streams` con `s16le` a 16 kHz.
-3. Graba el micrófono y envía bloques de 100 ms a `POST /streams/{id}/audio`.
-4. Escucha `GET /streams/{id}/events` y pinta los subtítulos en una página
-   web a pantalla completa o en la terminal.
+2. Hace `POST /streams` con `s16le` a 16 kHz.
+3. Graba el micrófono (o reproduce un WAV en tiempo real), remuestrea a
+   16 kHz y envía bloques de 100 ms a `POST /streams/{id}/audio`.
+4. Escucha `GET /streams/{id}/events`.
+5. Muestra los subtítulos en una página local configurable por URL (2.ª
+   pantalla u OBS) y en la terminal.
+6. Al terminar, guarda `.txt` y `.srt` y resume la latencia: cuándo llegan
+   las primeras palabras, cada cuánto se actualizan los parciales y cuánto
+   tarda el texto final de cada frase.
 
-Con esto se mide la latencia real y se prueba la experiencia (cuántas
-líneas, tamaño, cuándo sube una línea) antes de escribir la versión nativa.
+Comprobado sólo contra `mock_hex.py`, un Hex simulado que sigue
+`docs/streams.md`:
+
+- 12 tests automáticos;
+- la página en Chromium, a mitad de una sesión, con la vista normal, la
+  variante para OBS y el ancho de móvil.
+
+Sin comprobar: el Hex real, un micrófono real y Windows. Esa medición es el
+siguiente paso, y el README del prototipo explica qué medir.
 
 Límites: Hex tiene que estar abierto con el modelo cargado por el dictado (en
 Linux y Windows, con el listener activo), sólo hay un stream a la vez y sólo
@@ -211,9 +265,14 @@ En orden de coste:
 1. **Mostrar ya lo tentativo**: el overlay lo pinta en cuanto llega.
 2. **Chunks más cortos**: `HEX_STREAM_CHUNK_MS` ya cambia el chunk y el
    contexto derecho de Parakeet (por defecto 1040 ms;
-   `src/transcription/gguf_session.rs`). Hay que medir latencia y precisión
-   con 560, 320 y 160 ms. Para Nemotron habrá que ver qué opciones expone
-   transcribe.cpp.
+   `src/transcription/gguf_session.rs`). El artefacto de Nemotron también
+   declara arquitectura `parakeet`, así que probablemente le afecta; hay que
+   comprobarlo.
+   - Medir la latencia de los parciales y la precisión con 560, 320 y
+     160 ms.
+   - En la RTX 5070 Ti, 560 y 160 ms empeoraron el dictado en inglés sin
+     acelerarlo. Para subtítulos importa otra métrica, la latencia de los
+     parciales, que aún no se ha medido.
 3. **Ajustar las pausas** para subtítulos: pausa de 600 ms y trozo mínimo de
    3 s en `pause_segmenter.rs`. Cerrar líneas antes hace que suban antes.
 4. **Sin GPU o con modelos sin streaming** (Parakeet v3, el más preciso en
@@ -255,8 +314,7 @@ las fases 1 a 4. Sólo cambian el board y la vista.
 
 ## Decisiones abiertas
 
-1. Sistema operativo principal y si tienes GPU (decide si hay parciales desde
-   el primer día).
+1. ~~Sistema operativo y GPU~~: Windows x64 con una RTX 5070 Ti (resuelto).
 2. Idioma: ¿sólo español, o también inglés y otros?
 3. ¿Subtítulos de lo que dices (este plan) o teleprompter con guion (Fase 5)?
    ¿O las dos cosas?

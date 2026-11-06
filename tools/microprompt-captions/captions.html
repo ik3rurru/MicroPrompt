@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MicroPrompt</title>
+<style>
+  /* Options come from the URL, e.g. /?size=72&lines=2&align=left&transparent=1
+     size      font size in px (default 56)
+     lines     visible lines (default 3)
+     align     center | left (default center)
+     position  bottom | top | middle (default bottom)
+     width     max width of the text block, in % of the window (default 90)
+     fg, dim, bg   text, tentative-word, and background colors (CSS; # as %23)
+     font      font family (default system UI)
+     weight    font weight (default 600)
+     transparent=1  transparent background with an outline, for OBS
+     status=0  hide the status line */
+  :root {
+    --size: 56px;
+    --lines: 3;
+    --fg: #ffffff;
+    --dim: #8f9ba8;
+    --bg: #000000;
+    --width: 90vw;
+    --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --weight: 600;
+    --line: 1.25;
+  }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--font);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-end;
+  }
+  body.top { justify-content: flex-start; }
+  body.middle { justify-content: center; }
+  body.transparent { background: transparent; }
+  body.transparent #text {
+    text-shadow: 0 0 6px #000, 0 0 2px #000, 2px 2px 3px #000;
+  }
+  #frame {
+    box-sizing: border-box;
+    width: var(--width);
+    padding: 3vh 0;
+  }
+  /* A window of exactly N lines; the text sits at its bottom, so older
+     lines leave through the top as new words arrive. */
+  #window {
+    height: calc(var(--size) * var(--line) * var(--lines));
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    /* The line leaving through the top fades out instead of showing a cut
+       sliver of its descenders or its shadow. */
+    -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 calc(var(--size) * 0.18));
+    mask-image: linear-gradient(to bottom, transparent 0, #000 calc(var(--size) * 0.18));
+  }
+  #text {
+    font-size: var(--size);
+    font-weight: var(--weight);
+    line-height: var(--line);
+    text-align: center;
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
+  }
+  body.left #text { text-align: left; }
+  .done { opacity: 0.78; }
+  .tentative { color: var(--dim); }
+  #status {
+    position: fixed;
+    top: 10px;
+    left: 14px;
+    font: 500 13px/1.3 var(--font);
+    color: var(--dim);
+    opacity: 0.85;
+    letter-spacing: 0.01em;
+  }
+  #status .dot {
+    display: inline-block;
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    margin-right: 6px;
+    background: #6b7280;
+    vertical-align: 1px;
+  }
+  #status.live .dot { background: #ef4444; animation: pulse 1.6s ease-in-out infinite; }
+  #status.error { color: #fca5a5; }
+  body.nostatus #status { display: none; }
+  @keyframes pulse { 50% { opacity: 0.35; } }
+  @media (prefers-reduced-motion: reduce) { #status.live .dot { animation: none; } }
+</style>
+</head>
+<body>
+<div id="status"><span class="dot"></span><span id="status-text">conectando…</span></div>
+<div id="frame"><div id="window"><div id="text" aria-live="polite"></div></div></div>
+<script>
+  "use strict";
+  const params = new URLSearchParams(location.search);
+  const root = document.documentElement.style;
+  const number = (name, min, max) => {
+    const value = Number(params.get(name));
+    return Number.isFinite(value) && value >= min && value <= max ? value : null;
+  };
+  const size = number("size", 8, 400);
+  if (size) root.setProperty("--size", size + "px");
+  const lines = number("lines", 1, 20);
+  if (lines) root.setProperty("--lines", String(lines));
+  const width = number("width", 10, 100);
+  if (width) root.setProperty("--width", width + "vw");
+  const weight = number("weight", 100, 900);
+  if (weight) root.setProperty("--weight", String(weight));
+  for (const name of ["fg", "dim", "bg"]) {
+    const value = params.get(name);
+    if (value && CSS.supports("color", value)) root.setProperty("--" + name, value);
+  }
+  if (params.get("font")) root.setProperty("--font", params.get("font"));
+  if (params.get("align") === "left") document.body.classList.add("left");
+  const position = params.get("position");
+  if (position === "top" || position === "middle") document.body.classList.add(position);
+  if (params.get("transparent") === "1") document.body.classList.add("transparent");
+  if (params.get("status") === "0") document.body.classList.add("nostatus");
+
+  const text = document.getElementById("text");
+  const status = document.getElementById("status");
+  const statusText = document.getElementById("status-text");
+
+  function span(className, content) {
+    const node = document.createElement("span");
+    node.className = className;
+    node.textContent = content;
+    return node;
+  }
+
+  function render(state) {
+    const nodes = [];
+    const done = state.lines.join(" ");
+    if (done) nodes.push(span("done", done));
+    const stable = state.stable.trim();
+    if (stable) nodes.push(span("stable", (done ? " " : "") + stable));
+    const tentative = state.tentative.trim();
+    if (tentative) nodes.push(span("tentative", (done || stable ? " " : "") + tentative));
+    text.replaceChildren(...nodes);
+
+    const info = state.info || {};
+    const parts = [state.status];
+    if (info.model) parts.push(info.model);
+    if (info.language) parts.push(info.language);
+    if (info.partials === false) parts.push("sin parciales");
+    if (state.error) parts.push(state.error);
+    statusText.textContent = parts.join(" · ");
+    status.classList.toggle("live", state.status === "en vivo");
+    status.classList.toggle("error", state.status === "error");
+  }
+
+  function connect() {
+    const source = new EventSource("/captions");
+    source.onmessage = (message) => render(JSON.parse(message.data));
+    source.onerror = () => {
+      statusText.textContent = "sin conexión con captions.py…";
+      status.classList.remove("live");
+    };
+  }
+  connect();
+</script>
+</body>
+</html>
