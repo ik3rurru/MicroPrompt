@@ -74,7 +74,7 @@ idioma.
 | Opción | Qué hace | Por defecto |
 | --- | --- | --- |
 | `size` | tamaño de letra en px | `56` |
-| `lines` | líneas visibles | `3` |
+| `lines` | líneas visibles; `all` muestra toda la sesión con scroll (sigue el texto nuevo mientras estés abajo) | `3` |
 | `align` | `center` o `left` | `center` |
 | `position` | `bottom`, `middle` o `top` | `bottom` |
 | `width` | ancho del bloque, en % de la ventana | `90` |
@@ -96,6 +96,34 @@ Ejemplos:
 
 Las palabras ya fijadas salen en blanco, las provisionales en gris, y las
 frases terminadas se atenúan un poco y suben.
+
+## Medido en Windows
+
+7 de noviembre de 2026, Hex 3.3.0 oficial, Windows x64 (Ryzen 7 9800X3D,
+RTX 5070 Ti). Audio: un WAV de 25,6 s en español generado con la voz Helena
+de Windows (SAPI), 5 frases con pausas de 1,5 a 2 s, enviado con `--wav` a
+velocidad real.
+
+| Modelo | Dónde | Parciales | Primeras palabras | Parcial cada | Frase final tras su audio (mediana / p90) |
+| --- | --- | --- | ---: | ---: | ---: |
+| Nemotron 3.5 ASR | RTX 5070 Ti (Vulkan) | sí, 14 | 1,20 s | 1,12–1,14 s | 0,02–0,04 s / 0,14 s |
+| Cohere Transcribe | CPU | no | — | — | 0,52 s / 0,94 s |
+
+Las dos pasadas con Nemotron y la de Cohere dieron la transcripción exacta
+(Cohere escribió "Micro Prompt").
+
+Con micrófono (auriculares Astro A50, voz real, habla libre de 2,5 min con
+Nemotron en la RTX): 24 frases, casi todas exactas. Los errores fueron una
+conjugación ("si habla" por "si hablo"), una frase partida en dos por una
+pausa a media frase ("Este modelo" / "Podría ser mejor…") y una frase
+fantasma de sólo "¿" en un silencio. Sensación al usarlo: correcto, pero
+"bastante lento"; el texto va algo más de un segundo por detrás de la voz.
+Sólo se oye el micrófono, no el audio de Windows.
+
+Ojo: si la GPU falla una vez (Hex guardó un "out of memory" con Cohere en la
+RTX), Hex la apunta en `%APPDATA%\hex\gpu-failures.json` y en modo Auto pasa
+a la CPU, sin parciales. `hex settings set transcription_device gpu` (o
+Settings › Speech engine › GPU) la vuelve a probar.
 
 ## Qué medir en esta fase
 

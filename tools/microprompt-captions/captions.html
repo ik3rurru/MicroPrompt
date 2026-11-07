@@ -7,7 +7,7 @@
 <style>
   /* Options come from the URL, e.g. /?size=72&lines=2&align=left&transparent=1
      size      font size in px (default 56)
-     lines     visible lines (default 3)
+     lines     visible lines (default 3); all = the whole session, scrollable
      align     center | left (default center)
      position  bottom | top | middle (default bottom)
      width     max width of the text block, in % of the window (default 90)
@@ -66,6 +66,20 @@
     -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 calc(var(--size) * 0.18));
     mask-image: linear-gradient(to bottom, transparent 0, #000 calc(var(--size) * 0.18));
   }
+  /* lines=all: the window fills the screen and keeps the whole session;
+     scroll up to read back, and it follows new text again at the bottom.
+     margin-top:auto (not justify-content) keeps the top reachable. */
+  body.all #frame { height: 100%; display: flex; flex-direction: column; padding-top: 36px; }
+  body.all.nostatus #frame { padding-top: 3vh; }
+  body.all #window {
+    flex: 1;
+    height: auto;
+    min-height: 0;
+    overflow-y: auto;
+    -webkit-mask-image: none;
+    mask-image: none;
+  }
+  body.all #text { margin-top: auto; }
   #text {
     font-size: var(--size);
     font-weight: var(--weight);
@@ -125,6 +139,8 @@
   if (size) root.setProperty("--size", size + "px");
   const lines = number("lines", 1, 20);
   if (lines) root.setProperty("--lines", String(lines));
+  const all = params.get("lines") === "all";
+  if (all) document.body.classList.add("all");
   const width = number("width", 10, 100);
   if (width) root.setProperty("--width", width + "vw");
   const weight = number("weight", 100, 900);
@@ -205,7 +221,16 @@
     });
   }
 
+  const win = document.getElementById("window");
+
   function render(state) {
+    // Follow new text only while the reader is at the bottom.
+    const atBottom = win.scrollHeight - win.scrollTop - win.clientHeight < 40;
+    paint(state);
+    if (all && atBottom) win.scrollTop = win.scrollHeight;
+  }
+
+  function paint(state) {
     const lines = state.lines.map((line) => (typeof line === "string" ? { text: line } : line));
     state = { ...state, lines };
     if ((state.info || {}).speakers) {

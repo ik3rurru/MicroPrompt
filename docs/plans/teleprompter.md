@@ -185,7 +185,7 @@ bandeja). Así `git merge upstream/dev` sigue siendo viable.
     o adaptarlos antes de crear esas ramas.
 - Mantener `LICENSE` (MIT) y `THIRD_PARTY_NOTICES.md`.
 
-### Fase 1: prototipo sin tocar Rust, con `/streams` (hecho; falta medir en Windows)
+### Fase 1: prototipo sin tocar Rust, con `/streams` (hecho y medido en Windows)
 
 [`tools/microprompt-captions/`](../../tools/microprompt-captions/README.md),
 en Python con numpy y sounddevice:
@@ -208,8 +208,21 @@ Comprobado sólo contra `mock_hex.py`, un Hex simulado que sigue
 - la página en Chromium, a mitad de una sesión, con la vista normal, la
   variante para OBS y el ancho de móvil.
 
-Sin comprobar: el Hex real, un micrófono real y Windows. Esa medición es el
-siguiente paso, y el README del prototipo explica qué medir.
+Medido el 7 de noviembre de 2026 en Windows x64 con el Hex 3.3.0 oficial y
+un WAV de 25,6 s en español (voz sintética Helena de Windows, 5 frases con
+pausas de 1,5 a 2 s), resultados en el
+[README del prototipo](../../tools/microprompt-captions/README.md#medido-en-windows):
+
+- Nemotron 3.5 ASR en la RTX 5070 Ti (Vulkan): primeras palabras a 1,20 s,
+  un parcial cada 1,12 a 1,14 s, cada frase cerrada 0,02 a 0,04 s tras su
+  audio, transcripción exacta.
+- Cohere Transcribe en la CPU: sin parciales, cada frase 0,52 s tras su audio.
+
+- Micrófono real (2,5 min de habla libre, Nemotron en la RTX): 24 frases,
+  casi todas exactas; se nota "bastante lento" (más de 1 s por detrás de la
+  voz), que es lo que ataca la Fase 4.
+
+Sin comprobar: ruido de fondo.
 
 Límites: Hex tiene que estar abierto con el modelo cargado por el dictado (en
 Linux y Windows, con el listener activo), sólo hay un stream a la vez y sólo
