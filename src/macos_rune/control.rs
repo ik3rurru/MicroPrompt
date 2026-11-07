@@ -166,6 +166,10 @@ impl Pump {
                 "unsupported",
                 "this build has no capture engine: it is a build option (`--features capture`), off in public builds",
             )),
+            ControlCommand::Teleprompter { .. } => Some(ControlReply::error(
+                "unsupported",
+                "the teleprompter runs on Linux and Windows only",
+            )),
             ControlCommand::Dictation { .. } | ControlCommand::PasteLast => {
                 unreachable!("listener_command answers it")
             }

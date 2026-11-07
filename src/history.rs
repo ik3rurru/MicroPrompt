@@ -27,6 +27,8 @@ pub use versions::{HistoryVersion, Transcript};
 const VERSION: u32 = 1;
 const MAX_ENTRIES: usize = 10_000;
 const MAX_TEXT_BYTES: usize = 16 * 1024;
+/// MicroPrompt: a Teleprompter session's text, about two hours of speech.
+const MAX_SESSION_TEXT_BYTES: usize = 128 * 1024;
 const MAX_LABEL_BYTES: usize = 256;
 const MAX_FALLBACK_BYTES: usize = 1_024;
 const MAX_TOTAL_TEXT_BYTES: usize = 16 * 1024 * 1024;
@@ -84,6 +86,8 @@ pub enum HistoryKind {
     Printed,
     /// Dictate without processing: pasted as heard, with no step run.
     Raw,
+    /// MicroPrompt: a Teleprompter session's subtitles, never pasted.
+    Teleprompter,
 }
 
 impl HistoryKind {
@@ -94,6 +98,7 @@ impl HistoryKind {
             Self::VoiceAction => "Voice Action",
             Self::Printed => "Printed",
             Self::Raw => "Raw",
+            Self::Teleprompter => "Teleprompter",
         }
     }
 }
@@ -138,6 +143,17 @@ pub struct HistoryEntry {
     /// Earlier transcripts, newest first ([`versions`]).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub versions: Vec<HistoryVersion>,
+    /// A Teleprompter session's timed lines, for its subtitles.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub segments: Vec<HistorySegment>,
+}
+
+/// One timed line of a Teleprompter session, from the session's start.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct HistorySegment {
+    pub start_ms: u64,
+    pub end_ms: u64,
+    pub text: String,
 }
 
 fn is_zero(value: &u64) -> bool {
@@ -153,6 +169,11 @@ impl HistoryEntry {
     fn text_bytes(&self) -> usize {
         self.raw_text.len()
             + self.final_text.len()
+            + self
+                .segments
+                .iter()
+                .map(|segment| segment.text.len())
+                .sum::<usize>()
             + self
                 .versions
                 .iter()
@@ -388,6 +409,17 @@ impl HistoryStore {
     /// Record one successful result. Returns the stable entry ID, or `None`
     /// while retention is off.
     pub fn record(&mut self, draft: HistoryDraft, now_ms: u64) -> io::Result<Option<u64>> {
+        self.record_with(draft, Vec::new(), now_ms)
+    }
+
+    /// [`Self::record`] with a Teleprompter session's timed lines, which
+    /// share its text cap: past it, the later lines are left out.
+    pub fn record_with(
+        &mut self,
+        draft: HistoryDraft,
+        mut segments: Vec<HistorySegment>,
+        now_ms: u64,
+    ) -> io::Result<Option<u64>> {
         if self.retention.is_off() {
             return Ok(None);
         }
@@ -399,12 +431,22 @@ impl HistoryStore {
                 0
             })
         });
+        let max_text = if draft.kind == HistoryKind::Teleprompter {
+            MAX_SESSION_TEXT_BYTES
+        } else {
+            MAX_TEXT_BYTES
+        };
+        let mut kept = 0;
+        segments.retain(|segment| {
+            kept += segment.text.len();
+            kept <= max_text
+        });
         self.entries.push(HistoryEntry {
             id,
             timestamp_ms: now_ms,
             kind: draft.kind,
-            raw_text: truncated(&draft.raw_text, MAX_TEXT_BYTES),
-            final_text: truncated(&draft.final_text, MAX_TEXT_BYTES),
+            raw_text: truncated(&draft.raw_text, max_text),
+            final_text: truncated(&draft.final_text, max_text),
             application: draft
                 .application
                 .map(|application| truncated(&application, MAX_LABEL_BYTES)),
@@ -423,6 +465,7 @@ impl HistoryStore {
             language: None,
             text_ms: None,
             versions: Vec::new(),
+            segments,
         });
         self.prune(now_ms);
         self.persist()?;
@@ -565,7 +608,7 @@ impl HistoryStore {
             .map(|max_age| now_ms.saturating_sub(max_age));
         self.entries()
             .filter(|entry| cutoff.is_none_or(|cutoff| entry.timestamp_ms >= cutoff))
-            .filter(|entry| entry.kind != HistoryKind::Printed)
+            .filter(|entry| !matches!(entry.kind, HistoryKind::Printed | HistoryKind::Teleprompter))
             .filter(|entry| !entry.final_text.trim().is_empty())
             .take(count)
             .collect()
@@ -722,6 +765,14 @@ impl History {
 
     pub fn record(&self, draft: HistoryDraft) -> io::Result<Option<u64>> {
         self.synced().record(draft, now_ms())
+    }
+
+    pub fn record_with(
+        &self,
+        draft: HistoryDraft,
+        segments: Vec<HistorySegment>,
+    ) -> io::Result<Option<u64>> {
+        self.synced().record_with(draft, segments, now_ms())
     }
 
     pub fn delete(&self, id: u64) -> io::Result<bool> {

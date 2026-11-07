@@ -191,6 +191,10 @@ const PATHS: &[(&str, &str)] = &[
     ("history-menu", "Window/History/Retention menu"),
     ("history-clear", "Window/History/Clear all asks first"),
     ("history-empty", "Window/History/Empty"),
+    (
+        "history-teleprompter",
+        "Window/History/Teleprompter session",
+    ),
     #[cfg(hex_capture)]
     ("mac-scrawl", "Window/Annotate/On"),
     #[cfg(hex_capture)]
@@ -250,6 +254,11 @@ const PATHS: &[(&str, &str)] = &[
     ("commands", "Linux & Windows/Settings · hex commands"),
     ("portal-mouse", "Linux & Windows/Settings · mouse button"),
     ("windows-settings", "Linux & Windows/Settings · Windows"),
+    ("teleprompter", "Linux & Windows/Teleprompter/Session"),
+    (
+        "teleprompter-idle",
+        "Linux & Windows/Teleprompter/Before a session",
+    ),
     ("windows-labs", "Linux & Windows/Labs · Windows"),
     ("linux-labs", "Linux & Windows/Labs · Linux"),
     ("disabled", "Linux & Windows/Disabled"),

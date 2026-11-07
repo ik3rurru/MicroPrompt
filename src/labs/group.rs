@@ -59,6 +59,7 @@ impl Feature {
             | Self::VoiceFilter
             | Self::HideMenuBarIcon
             | Self::SettingsSearch
+            | Self::Teleprompter
             | Self::Playground => Group::Dictation,
             Self::SmartSpacing
             | Self::SpokenFormatting

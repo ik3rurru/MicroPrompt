@@ -62,6 +62,21 @@ pub enum ScrawlCaptureAction {
     Replay,
 }
 
+/// What `hex teleprompter` does (MicroPrompt, Labs › Teleprompter).
+/// Idempotent like [`CaptureAction`].
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, clap::ValueEnum)]
+#[serde(rename_all = "kebab-case")]
+pub enum TeleprompterAction {
+    /// Transcribe the microphone live until `stop`.
+    Start,
+    /// Finish the last words and print the whole text.
+    Stop,
+    /// The text so far and its latency.
+    Status,
+    /// Stop a running session, else start one: for keybindings.
+    Toggle,
+}
+
 /// The window's panes, by the names `hex window show` takes.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, clap::ValueEnum)]
 #[serde(rename_all = "kebab-case")]
@@ -193,6 +208,10 @@ pub enum ControlCommand {
     },
     /// Takes the newest send back while it can be undone.
     ScrawlCaptureUndo,
+    /// MicroPrompt: live subtitles of the microphone (Labs › Teleprompter).
+    Teleprompter {
+        action: TeleprompterAction,
+    },
     /// What routing sees for a capture and what it decides. `ask_jev` asks
     /// Jev again (one call).
     ScrawlCaptureRoute {
@@ -1071,6 +1090,9 @@ mod tests {
                 raw: true,
             },
             ControlCommand::PasteLast,
+            ControlCommand::Teleprompter {
+                action: TeleprompterAction::Status,
+            },
             ControlCommand::Screenshot { pick: false },
             ControlCommand::Screenshot { pick: true },
             ControlCommand::MeetingRecord {

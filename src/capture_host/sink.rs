@@ -156,6 +156,7 @@ impl ListenerTimeline {
 
     /// One microphone chunk, stamped on its stream's clock.
     pub fn feed(&self, samples: &[f32], sample_rate: u32, captured_through: CaptureInstant) {
+        crate::teleprompter::feed(samples, sample_rate);
         let mut state = self.state();
         if state.sink.is_none() {
             return;
@@ -179,9 +180,9 @@ impl ListenerTimeline {
         self.state().offset = None;
     }
 
-    /// Whether a capture wants the microphone.
+    /// Whether a capture or the teleprompter wants the microphone.
     pub fn wants_audio(&self) -> bool {
-        self.state().sink.is_some()
+        self.state().sink.is_some() || crate::teleprompter::wants_audio()
     }
 }
 

@@ -1,0 +1,165 @@
+//! MicroPrompt's Teleprompter pane (Labs › Teleprompter, Linux and
+//! Windows): the whole session's text, newest at the bottom, the open
+//! segment's provisional words faint, scrolling to reread and following
+//! the newest line while scrolled to the bottom. One button starts and
+//! stops the session (`crate::teleprompter`), which runs in this process.
+
+use rune::{El, Span, TextStyle, col, rich, row, text};
+
+use crate::desktop::i18n::tr;
+use crate::rune_ui::controls::{ButtonKind, METRICS, Paint, button, card, pulsing_dot};
+use crate::rune_ui::lists::placeholder;
+use crate::rune_ui::platform::PlatformState;
+use crate::rune_ui::{Tx, Ui, list_detail};
+use crate::teleprompter::View;
+
+/// Subtitles read from across the room, not like a settings row.
+const CAPTION: TextStyle = TextStyle::new(26.0, 450.0).lh(36.0);
+
+/// The pane shows while its Lab is on, where the listener feeds it.
+pub(in crate::rune_ui) fn shown(ui: &Ui) -> bool {
+    crate::labs::Feature::Teleprompter.on_this_os()
+        && crate::labs::Feature::Teleprompter.on(&ui.settings)
+}
+
+/// Copies the session in when it changed (the host's poll, every frame;
+/// the session wakes the window on each change). True when it did.
+pub(in crate::rune_ui) fn poll(state: &mut PlatformState) -> bool {
+    let generation = crate::teleprompter::generation();
+    if generation == state.teleprompter.generation {
+        return false;
+    }
+    state.teleprompter = crate::teleprompter::view();
+    true
+}
+
+pub(in crate::rune_ui) fn pane(ui: &Ui, p: Paint) -> (Vec<El>, El) {
+    let view = &ui.platform.teleprompter;
+    let body = body(p, view);
+    // Windows registers its own shortcut; elsewhere a desktop keybinding runs
+    // `hex teleprompter toggle`. Hidden while a session runs: only its text.
+    if !cfg!(target_os = "windows") || view.running {
+        return (vec![control(p, view)], body);
+    }
+    let rows = crate::rune_ui::general::shortcut_rows(
+        ui,
+        p,
+        "teleprompter-shortcut",
+        &crate::rune_ui::icons::KEYBOARD,
+        tr("Start and stop the session"),
+        crate::rune_ui::ShortcutTarget::Teleprompter,
+        Some(tr("Works with the window closed")),
+    );
+    let shortcut = col()
+        .key("teleprompter-settings")
+        .px(METRICS.gutter - METRICS.row_px)
+        .pb(METRICS.section_gap)
+        .child(card(p, "shortcut", rows));
+    (
+        vec![control(p, view)],
+        col()
+            .key("teleprompter-page")
+            .grow(1.0)
+            .shrink()
+            .child(shortcut)
+            .child(body),
+    )
+}
+
+/// Start, or a recording state with Stop.
+fn control(p: Paint, view: &View) -> El {
+    let toggle = |_: &mut Ui, _: &mut Tx| crate::teleprompter::toggle();
+    if !view.running {
+        return button(
+            p,
+            "teleprompter-start",
+            tr("Start session"),
+            ButtonKind::Primary,
+            toggle,
+        );
+    }
+    let label = if view.stopping {
+        tr("Stopping…")
+    } else {
+        tr("Stop session")
+    };
+    row()
+        .key("teleprompter-running")
+        .gap(8.0)
+        .center_y()
+        .child(pulsing_dot(p.danger()))
+        .child(button(
+            p,
+            "teleprompter-stop",
+            label,
+            ButtonKind::Secondary,
+            move |ui, tx| {
+                if !ui.platform.teleprompter.stopping {
+                    toggle(ui, tx);
+                }
+            },
+        ))
+}
+
+fn body(p: Paint, view: &View) -> El {
+    let error = view.error.as_ref().map(|error| {
+        text(error.clone())
+            .key("teleprompter-error")
+            .font(p.k.ty.ui)
+            .color(p.danger())
+            .wrap()
+            .px(METRICS.gutter)
+            .pb(8.0)
+    });
+    let open = format!("{}{}", view.stable, view.tentative);
+    if view.segments.is_empty() && open.trim().is_empty() {
+        let hint = if view.running {
+            tr("Listening… your words show here")
+        } else {
+            tr("Start a session and speak; your words show here")
+        };
+        return col()
+            .key("teleprompter")
+            .grow(1.0)
+            .shrink()
+            .children(error)
+            .child(placeholder(p, "teleprompter-empty", hint));
+    }
+    let mut lines = col()
+        .key("teleprompter-lines")
+        .gap(14.0)
+        .px(METRICS.gutter)
+        .pb(16.0);
+    for (index, segment) in view.segments.iter().enumerate() {
+        lines = lines.child(
+            text(segment.trim().to_owned())
+                .key(format!("segment-{index}"))
+                .font(CAPTION)
+                .color(p.text())
+                .wrap(),
+        );
+    }
+    if !open.trim().is_empty() {
+        let stable = view.stable.trim_start();
+        let words = format!("{stable}{}", view.tentative);
+        let words = words.trim_end().to_owned();
+        let faint = Span::new(stable.len().min(words.len()), words.len()).color(p.faint());
+        lines = lines.child(
+            rich(words, vec![faint])
+                .key("open-segment")
+                .font(CAPTION)
+                .color(p.text()),
+        );
+    }
+    col()
+        .key("teleprompter")
+        .grow(1.0)
+        .shrink()
+        .children(error)
+        .child(list_detail::card_scroll_sticky(
+            p,
+            "teleprompter-text",
+            lines,
+            true,
+        ))
+}

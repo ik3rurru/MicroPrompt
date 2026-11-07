@@ -12,7 +12,7 @@ use clap::{Args, Subcommand};
 
 use super::{
     CONTROL_VERSION, CaptureAction, ControlCommand, ControlReply, ControlRequest, ControlResponse,
-    Pane,
+    Pane, TeleprompterAction,
 };
 
 pub const EXIT_REFUSED: u8 = 1;
@@ -76,6 +76,14 @@ pub enum ControlCli {
         /// processing.
         #[arg(long)]
         raw: bool,
+        #[command(flatten)]
+        output: Output,
+    },
+    /// Live subtitles of the microphone (Labs › Teleprompter, Linux and
+    /// Windows): `start`, `status` for the text so far, `stop` for all of it.
+    Teleprompter {
+        #[arg(value_enum)]
+        action: TeleprompterAction,
         #[command(flatten)]
         output: Output,
     },
@@ -427,6 +435,9 @@ pub fn run(command: ControlCli) -> u8 {
             send(ControlCommand::Dictation { action, print, raw }, output)
         }
         ControlCli::PasteLast { output } => send(ControlCommand::PasteLast, output),
+        ControlCli::Teleprompter { action, output } => {
+            send(ControlCommand::Teleprompter { action }, output)
+        }
         ControlCli::Screenshot { pick, output } => {
             send(ControlCommand::Screenshot { pick }, output)
         }

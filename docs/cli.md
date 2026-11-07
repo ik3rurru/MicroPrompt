@@ -37,6 +37,7 @@ hex
 │   ├── stop --print               print the transcript instead of pasting it (below)
 │   └── start|toggle --raw         paste the transcript as heard, skipping the Output steps
 ├── paste-last                     paste the last dictation (Option-Shift-V); refused while recording
+├── teleprompter start|status|stop|toggle MicroPrompt, Labs › Teleprompter (Linux, Windows): live subtitles of the microphone
 ├── meetings
 │   ├── record [--title T]         as the menu bar's Record Meeting; needs meetings.enabled
 │   ├── stop                       Stop & Transcribe

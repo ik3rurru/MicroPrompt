@@ -60,6 +60,7 @@ impl Backend {
             backend.refresh();
             return backend;
         };
+        crate::teleprompter::set_waker(wake.clone());
         host.set_waker(wake);
         Self::Host(host, None)
     }

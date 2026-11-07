@@ -418,6 +418,10 @@ static CAPTURE_INHIBIT: AtomicBool = AtomicBool::new(false);
 /// Turns hook processing off (true) or back on (false) for the duration
 /// of a chord capture. Entering a capture also cancels any in-flight
 /// dictation hold, like the macOS capture flow.
+pub(crate) fn capture_inhibited() -> bool {
+    CAPTURE_INHIBIT.load(Ordering::Relaxed)
+}
+
 pub(crate) fn set_capture_inhibited(inhibited: bool) {
     CAPTURE_INHIBIT.store(inhibited, Ordering::Relaxed);
     if !inhibited {

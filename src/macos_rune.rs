@@ -138,6 +138,8 @@ pub(crate) enum ShortcutTarget {
     SecondDictation,
     /// Toggle mode's cancel shortcut.
     Cancel,
+    /// MicroPrompt: Labs › Teleprompter (Linux and Windows only).
+    Teleprompter,
     /// Labs › Screenshots.
     Screenshot,
 }

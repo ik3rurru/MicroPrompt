@@ -1,0 +1,567 @@
+//! MicroPrompt: live subtitles of the listener's own microphone, inside Hex
+//! (Labs › Teleprompter, Linux and Windows). `hex teleprompter start`
+//! copies the microphone the listener already reads (through
+//! [`crate::capture_host::ListenerTimeline`], which keeps it open while a
+//! session runs) into a `/streams` stream on the dictation engine's model,
+//! with its captions lookahead; `status` reads its text and latency, `stop`
+//! finishes it and keeps it in History, timed for its `.txt` and `.srt`
+//! ([`export`]). The window's Teleprompter pane reads the same text
+//! ([`view`]) and starts or stops it ([`toggle`]). Dictation still comes
+//! first: a press closes the stream's window, which catches up afterwards.
+
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::mpsc::{self, Receiver, RecvTimeoutError, SyncSender, TrySendError};
+use std::sync::{Arc, Mutex, MutexGuard};
+use std::thread::{self, JoinHandle};
+use std::time::{Duration, Instant};
+
+use crate::control::{ControlReply, TeleprompterAction};
+use crate::history::{HistoryDraft, HistoryEntry, HistoryKind, HistorySegment};
+
+#[cfg(target_os = "windows")]
+pub(crate) mod hotkey;
+use crate::transcription::stream::{End, Event, SAMPLE_RATE, SampleFormat, Stream, Streams};
+
+/// Microphone chunks (10 ms each) waiting for the pump: about 5 s. Past it a
+/// chunk is dropped rather than block the listener's loop.
+const TAP_CHUNKS: usize = 500;
+/// How long `stop` waits for the last window's text.
+const FINISH_WAIT: Duration = Duration::from_secs(15);
+
+/// A microphone chunk and its sample rate.
+type Chunk = (Vec<f32>, u32);
+
+static TAP: Mutex<Option<SyncSender<Chunk>>> = Mutex::new(None);
+static SESSION: Mutex<Option<Session>> = Mutex::new(None);
+/// The latest session's text, kept after it stops until the next starts.
+static LIVE: Mutex<Live> = Mutex::new(Live::new());
+/// Asks the window for a frame when the session changes.
+static WAKER: Mutex<Option<Arc<dyn Fn() + Send + Sync>>> = Mutex::new(None);
+
+fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    mutex.lock().unwrap_or_else(|error| error.into_inner())
+}
+
+/// One microphone chunk from the listener's loop; never blocks it.
+pub(crate) fn feed(samples: &[f32], sample_rate: u32) {
+    let mut tap = lock(&TAP);
+    let Some(sender) = tap.as_ref() else {
+        return;
+    };
+    match sender.try_send((samples.to_vec(), sample_rate)) {
+        Ok(()) => {}
+        // ponytail: a stalled pump loses audio; a gap marker if it matters.
+        Err(TrySendError::Full(_)) => tracing::warn!("teleprompter is behind; dropping audio"),
+        Err(TrySendError::Disconnected(_)) => *tap = None,
+    }
+}
+
+/// Whether a session wants the microphone open.
+pub(crate) fn wants_audio() -> bool {
+    lock(&TAP).is_some()
+}
+
+struct Session {
+    stream: Arc<Stream>,
+    started: Instant,
+    /// The speech model's name, for History.
+    model: String,
+    pump: JoinHandle<()>,
+    reader: JoinHandle<()>,
+}
+
+/// What the window shows of the latest session.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub(crate) struct View {
+    pub(crate) running: bool,
+    /// `stop` waits for the last words.
+    pub(crate) stopping: bool,
+    /// Closed segments, oldest first.
+    pub(crate) segments: Vec<String>,
+    /// The open segment: committed words, then the model's guess.
+    pub(crate) stable: String,
+    pub(crate) tentative: String,
+    /// Why the last start or stop failed.
+    pub(crate) error: Option<String>,
+    /// Bumped by every change, so the window copies only a new view.
+    pub(crate) generation: u64,
+}
+
+/// What a session has shown so far, as `status` reports it.
+struct Live {
+    view: View,
+    /// Audio sent when the first words showed.
+    first_words_ms: Option<u64>,
+    /// When each partial with new text arrived.
+    partials: Vec<Instant>,
+    /// Audio sent past each segment's end when its final text arrived.
+    behind_ms: Vec<u64>,
+}
+
+impl Live {
+    const fn new() -> Self {
+        Self {
+            view: View {
+                running: false,
+                stopping: false,
+                segments: Vec::new(),
+                stable: String::new(),
+                tentative: String::new(),
+                error: None,
+                generation: 0,
+            },
+            first_words_ms: None,
+            partials: Vec::new(),
+            behind_ms: Vec::new(),
+        }
+    }
+
+    fn text(&self) -> String {
+        let view = &self.view;
+        let open = format!("{}{}", view.stable, view.tentative);
+        view.segments
+            .iter()
+            .map(String::as_str)
+            .chain(Some(open.trim()))
+            .filter(|text| !text.is_empty())
+            .collect::<Vec<_>>()
+            .join(" ")
+    }
+
+    fn latency(&self) -> String {
+        let intervals = self
+            .partials
+            .windows(2)
+            .map(|pair| pair[1].duration_since(pair[0]).as_millis() as u64)
+            .collect::<Vec<_>>();
+        let mut parts = vec![format!("{} partials", self.partials.len())];
+        if let Some(ms) = median(intervals) {
+            parts.push(format!("every {:.2} s", ms as f64 / 1000.0));
+        }
+        if let Some(ms) = self.first_words_ms {
+            parts.push(format!(
+                "first words at {:.2} s of audio",
+                ms as f64 / 1000.0
+            ));
+        }
+        if let Some(ms) = median(self.behind_ms.clone()) {
+            parts.push(format!(
+                "final text {:.2} s after its audio ({} segments)",
+                ms as f64 / 1000.0,
+                self.behind_ms.len()
+            ));
+        }
+        parts.join(", ")
+    }
+}
+
+fn median(mut values: Vec<u64>) -> Option<u64> {
+    values.sort_unstable();
+    values.get(values.len() / 2).copied()
+}
+
+/// The latest session's text for the window.
+pub(crate) fn view() -> View {
+    lock(&LIVE).view.clone()
+}
+
+/// The [`View::generation`] now, to tell whether to copy the view.
+pub(crate) fn generation() -> u64 {
+    lock(&LIVE).view.generation
+}
+
+/// The window's waker; each change of the view calls it.
+pub(crate) fn set_waker(wake: Arc<dyn Fn() + Send + Sync>) {
+    *lock(&WAKER) = Some(wake);
+}
+
+/// Changes the view through `change`, then wakes the window.
+fn update(change: impl FnOnce(&mut Live)) {
+    {
+        let mut live = lock(&LIVE);
+        change(&mut live);
+        live.view.generation += 1;
+    }
+    if let Some(wake) = lock(&WAKER).clone() {
+        wake();
+    }
+}
+
+/// The pane's button: stops a running session, else starts one, on a
+/// thread of its own (a stop waits for the last words). A failure shows in
+/// [`View::error`].
+pub(crate) fn toggle() {
+    let spawned = thread::Builder::new()
+        .name("teleprompter-toggle".into())
+        .spawn(|| {
+            let action = if lock(&SESSION).is_some() {
+                TeleprompterAction::Stop
+            } else {
+                TeleprompterAction::Start
+            };
+            if let ControlReply::Error { message, .. } = command(action, true) {
+                update(|live| live.view.error = Some(message));
+            }
+        });
+    if let Err(error) = spawned {
+        update(|live| live.view.error = Some(error.to_string()));
+    }
+}
+
+/// `hex teleprompter …`; `enabled` is the lab's switch.
+pub(crate) fn command(action: TeleprompterAction, enabled: bool) -> ControlReply {
+    match action {
+        TeleprompterAction::Start if !enabled => ControlReply::error(
+            "feature-off",
+            "Teleprompter is a Lab; turn it on with `hex labs on teleprompter`",
+        ),
+        TeleprompterAction::Start => start(),
+        TeleprompterAction::Stop => stop(),
+        TeleprompterAction::Status => status(),
+        TeleprompterAction::Toggle if lock(&SESSION).is_some() => stop(),
+        TeleprompterAction::Toggle => command(TeleprompterAction::Start, enabled),
+    }
+}
+
+fn start() -> ControlReply {
+    let mut session = lock(&SESSION);
+    if session.is_some() {
+        return ControlReply::unchanged("Teleprompter is already running");
+    }
+    let (engine, selection) = match crate::transcription::stream::shared_engine() {
+        Ok(engine) => engine,
+        Err(code) => return ControlReply::error(code, "the speech model isn't loaded yet"),
+    };
+    let stream = match Streams::default().create(
+        engine,
+        SampleFormat::F32le,
+        selection.clone(),
+        String::new(),
+    ) {
+        Ok(stream) => stream,
+        Err(error) => return ControlReply::error("failed", format!("{error:?}")),
+    };
+    let (sender, receiver) = mpsc::sync_channel(TAP_CHUNKS);
+    let sent = Arc::new(AtomicU64::new(0));
+    let spawned = (|| {
+        let pump = {
+            let (stream, sent) = (stream.clone(), sent.clone());
+            thread::Builder::new()
+                .name("teleprompter-pump".into())
+                .spawn(move || pump(&stream, &receiver, &sent))?
+        };
+        let reader = {
+            let stream = stream.clone();
+            thread::Builder::new()
+                .name("teleprompter-reader".into())
+                .spawn(move || read(&stream, &sent))?
+        };
+        std::io::Result::Ok((pump, reader))
+    })();
+    let (pump, reader) = match spawned {
+        Ok(threads) => threads,
+        Err(error) => {
+            stream.cancel();
+            return ControlReply::error("failed", format!("couldn't start: {error}"));
+        }
+    };
+    update(|live| {
+        let generation = live.view.generation;
+        *live = Live::new();
+        live.view.running = true;
+        live.view.generation = generation;
+    });
+    *lock(&TAP) = Some(sender);
+    *session = Some(Session {
+        stream,
+        started: Instant::now(),
+        model: crate::transcription::models::definition(selection.model)
+            .name
+            .to_string(),
+        pump,
+        reader,
+    });
+    tracing::info!(model = ?selection.model, language = %selection.language, "teleprompter started");
+    ControlReply::done(format!(
+        "Teleprompter started on {} ({}); `hex teleprompter status` shows the text",
+        crate::transcription::models::definition(selection.model).name,
+        selection.language
+    ))
+}
+
+fn stop() -> ControlReply {
+    let Some(session) = lock(&SESSION).take() else {
+        return ControlReply::unchanged("Teleprompter isn't running");
+    };
+    update(|live| live.view.stopping = true);
+    // The pump sends what it already took, then ends with the tap.
+    *lock(&TAP) = None;
+    let _ = session.pump.join();
+    let end = session.stream.finish(FINISH_WAIT, &|| false);
+    if end.is_none() {
+        session.stream.cancel();
+    }
+    let _ = session.reader.join();
+    update(|live| {
+        live.view.running = false;
+        live.view.stopping = false;
+    });
+    let live = lock(&LIVE);
+    let elapsed = session.started.elapsed().as_secs();
+    tracing::info!(seconds = elapsed, latency = %live.latency(), "teleprompter stopped");
+    match end {
+        Some(End::Final {
+            text,
+            segments,
+            duration_ms,
+        }) => {
+            let saved = keep(&text, &segments, duration_ms, session.model);
+            ControlReply::done(format!(
+                "Teleprompter stopped after {elapsed} s{saved}; {}\n{text}",
+                live.latency()
+            ))
+        }
+        Some(End::Failed { message, .. }) => {
+            ControlReply::error("failed", format!("the last window failed: {message}"))
+        }
+        Some(End::Cancelled) | None => ControlReply::error(
+            "timeout",
+            format!("the last window took too long; so far:\n{}", live.text()),
+        ),
+    }
+}
+
+fn status() -> ControlReply {
+    let session = lock(&SESSION);
+    let Some(session) = session.as_ref() else {
+        return ControlReply::unchanged("Teleprompter isn't running");
+    };
+    let live = lock(&LIVE);
+    ControlReply::unchanged(format!(
+        "Teleprompter running for {} s; {}\n{}",
+        session.started.elapsed().as_secs(),
+        live.latency(),
+        live.text()
+    ))
+}
+
+/// Resamples the tap's chunks to 16 kHz and pushes them, renewing the lease
+/// while the microphone is quiet, until the tap closes or the stream ends.
+fn pump(stream: &Stream, chunks: &Receiver<Chunk>, sent: &AtomicU64) {
+    let mut resampler: Option<(u32, crate::dictation::StreamingResampler)> = None;
+    loop {
+        let (samples, rate) = match chunks.recv_timeout(Duration::from_secs(1)) {
+            Ok(chunk) => chunk,
+            Err(RecvTimeoutError::Timeout) if stream.heartbeat() => continue,
+            Err(_) => return,
+        };
+        if resampler.as_ref().is_none_or(|(at, _)| *at != rate) {
+            match crate::dictation::StreamingResampler::new(rate) {
+                Ok(new) => resampler = Some((rate, new)),
+                Err(error) => {
+                    tracing::warn!(%error, rate, "teleprompter can't resample the microphone");
+                    return;
+                }
+            }
+        }
+        let Some((_, resampler)) = resampler.as_mut() else {
+            return;
+        };
+        let audio = resampler.push(&samples);
+        if stream.push(&audio).is_err() {
+            return;
+        }
+        sent.fetch_add(audio.len() as u64, Ordering::Relaxed);
+    }
+}
+
+/// Follows the stream's events into `live` and the log until it ends.
+fn read(stream: &Stream, sent: &AtomicU64) {
+    let sent_ms = || sent.load(Ordering::Relaxed) * 1000 / SAMPLE_RATE as u64;
+    stream.subscribe(
+        Duration::from_secs(1),
+        &|| false,
+        &mut |event| {
+            update(|live| match event {
+                Event::Partial {
+                    stable, tentative, ..
+                } => {
+                    let view = &live.view;
+                    let new = format!("{stable}{tentative}").trim().to_string();
+                    let old = format!("{}{}", view.stable, view.tentative);
+                    if new != old.trim() && !new.is_empty() {
+                        live.first_words_ms.get_or_insert_with(sent_ms);
+                        live.partials.push(Instant::now());
+                    }
+                    live.view.stable = stable.clone();
+                    live.view.tentative = tentative.clone();
+                }
+                Event::Segment(segment) => {
+                    let behind_ms = sent_ms().saturating_sub(segment.end_ms);
+                    tracing::info!(
+                        segment = segment.segment,
+                        start_ms = segment.start_ms,
+                        end_ms = segment.end_ms,
+                        behind_ms,
+                        text = %segment.text,
+                        "teleprompter segment"
+                    );
+                    live.behind_ms.push(behind_ms);
+                    live.view.segments.push(segment.text.clone());
+                    live.view.stable.clear();
+                    live.view.tentative.clear();
+                }
+                Event::Error { code, message } => {
+                    tracing::warn!(code, message, "teleprompter stream failed");
+                }
+                Event::Final { .. } | Event::Cancelled => {}
+            });
+            true
+        },
+        &mut || true,
+    );
+}
+
+/// Keeps a finished session in History; what the reply adds about it.
+fn keep(
+    text: &str,
+    segments: &[crate::transcription::stream::Segment],
+    duration_ms: u64,
+    model: String,
+) -> &'static str {
+    if text.trim().is_empty() {
+        return "";
+    }
+    let draft = HistoryDraft {
+        kind: HistoryKind::Teleprompter,
+        raw_text: text.to_string(),
+        final_text: text.to_string(),
+        application: None,
+        processing: None,
+        audio_ms: duration_ms,
+        inference_ms: 0,
+        total_ms: 0,
+        recording: None,
+        model: Some(model),
+    };
+    let segments = segments
+        .iter()
+        .map(|segment| HistorySegment {
+            start_ms: segment.start_ms,
+            end_ms: segment.end_ms,
+            text: segment.text.clone(),
+        })
+        .collect();
+    match history().map(|history| history.record_with(draft, segments)) {
+        Some(Ok(Some(_))) => ", kept in History",
+        Some(Ok(None)) => ", not kept: History is off",
+        Some(Err(error)) => {
+            tracing::warn!(%error, "could not keep the teleprompter session");
+            ", not kept in History"
+        }
+        None => ", not kept in History",
+    }
+}
+
+/// The running app's History, or the saved one.
+fn history() -> Option<crate::history::History> {
+    #[cfg(target_os = "windows")]
+    if let Some(history) = crate::windows::rune::runtime().and_then(|runtime| runtime.history()) {
+        return Some(history);
+    }
+    let retention = crate::app_settings::AppSettings::read()
+        .unwrap_or_default()
+        .history_retention;
+    crate::history::History::open_default(retention)
+        .inspect_err(|error| tracing::warn!(%error, "could not open History"))
+        .ok()
+}
+
+/// A session's subtitles: one cue per line, timed from its start.
+pub(crate) fn srt(segments: &[HistorySegment]) -> String {
+    use crate::control::transcript_cli::{cue_text, subtitle_time};
+    let mut out = String::new();
+    let lines = segments
+        .iter()
+        .map(|segment| (segment, cue_text(&segment.text)))
+        .filter(|(_, text)| !text.is_empty());
+    for (number, (segment, text)) in lines.enumerate() {
+        out.push_str(&format!(
+            "{}\n{} --> {}\n{text}\n\n",
+            number + 1,
+            subtitle_time(segment.start_ms, ','),
+            subtitle_time(segment.end_ms.max(segment.start_ms), ',')
+        ));
+    }
+    out
+}
+
+/// Writes a kept session as `.srt` (`subtitles`) or `.txt` into
+/// Documents/MicroPrompt, named for when it was kept, and shows it in the
+/// file manager.
+pub(crate) fn export(entry: &HistoryEntry, subtitles: bool) -> Result<std::path::PathBuf, String> {
+    let folder = crate::app_paths::document_dir()
+        .ok_or("there is no Documents folder")?
+        .join("MicroPrompt");
+    std::fs::create_dir_all(&folder).map_err(|error| error.to_string())?;
+    let when = crate::meeting::query::iso_local(entry.timestamp_ms);
+    let when = when
+        .get(..16)
+        .unwrap_or(&when)
+        .replace('T', " ")
+        .replace(':', "-");
+    let (extension, body) = if subtitles {
+        ("srt", srt(&entry.segments))
+    } else {
+        ("txt", format!("{}\n", entry.final_text.trim()))
+    };
+    let path = folder.join(format!("Teleprompter {when}.{extension}"));
+    std::fs::write(&path, body).map_err(|error| error.to_string())?;
+    crate::meeting::reveal(&path);
+    Ok(path)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn live_text_joins_segments_and_the_partial() {
+        let mut live = Live::new();
+        assert_eq!(live.text(), "");
+        live.view.segments = vec!["Hola.".into(), "Esto es.".into()];
+        live.view.stable = "una".into();
+        live.view.tentative = " prueba".into();
+        assert_eq!(live.text(), "Hola. Esto es. una prueba");
+        assert_eq!(median(vec![300, 100, 200]), Some(200));
+        assert_eq!(median(vec![]), None);
+    }
+
+    #[test]
+    fn subtitles_number_and_time_each_line() {
+        let line = |start_ms, end_ms, text: &str| HistorySegment {
+            start_ms,
+            end_ms,
+            text: text.into(),
+        };
+        let srt = srt(&[
+            line(0, 3_580, "Hola, esto es una prueba."),
+            line(3_580, 3_600, "  "),
+            line(3_661_042, 3_665_000, "Dos --> tres"),
+        ]);
+        assert_eq!(
+            srt,
+            "1\n00:00:00,000 --> 00:00:03,580\nHola, esto es una prueba.\n\n\
+             2\n01:01:01,042 --> 01:01:05,000\nDos -> tres\n\n"
+        );
+    }
+
+    #[test]
+    fn start_is_refused_while_the_lab_is_off() {
+        assert!(matches!(
+            command(TeleprompterAction::Start, false),
+            ControlReply::Error { code, .. } if code == "feature-off"
+        ));
+        assert!(!wants_audio());
+    }
+}

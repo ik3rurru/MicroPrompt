@@ -4,7 +4,8 @@
 //! With Labs › Keep recordings on, an entry that kept its audio offers
 //! Transcribe again with any installed model, run on a worker; Replace keeps
 //! the earlier transcripts as versions to copy or switch back to. Every
-//! entry names the model that made its text, when it is known.
+//! entry names the model that made its text, when it is known. A
+//! Teleprompter session (MicroPrompt) saves as `.txt` or `.srt`.
 
 use std::sync::mpsc::{Receiver, TryRecvError, channel};
 
@@ -13,7 +14,7 @@ use rune_kit::{Menu as KitMenu, MenuItem, Placement, Select, SelectAppearance, T
 
 use super::controls::{ButtonKind, Paint, button};
 use super::list_detail::{self as ld, Item};
-use super::lists::{error_panel, section_label};
+use super::lists::{error_panel, section_label, small_button};
 use super::{Menu, Ui};
 use crate::desktop::i18n::{event_age, tr, tr_fill, tr_named};
 use crate::history::stats::HistoryStats;
@@ -46,6 +47,8 @@ pub(super) struct HistoryPane {
     pub(super) pending: Option<Pending>,
     /// The version whose Copy was pressed last: entry and index.
     pub(super) version_copied: Option<(u64, usize)>,
+    /// A Teleprompter session's last export: where it went, or why not.
+    pub(super) exported: Option<(u64, Result<String, String>)>,
 }
 
 /// Transcribe again's chosen model and the language for this one run.
@@ -187,6 +190,7 @@ impl HistoryPane {
                     language: None,
                     text_ms: None,
                     versions: Vec::new(),
+                    segments: Vec::new(),
                 }
             };
         let mut rewritten = entry(
@@ -752,7 +756,15 @@ fn detail(ui: &Ui, p: Paint, layer: &mut Vec<El>) -> El {
     if let Some(model) = model_label(entry.model.as_deref(), entry.language.as_deref()) {
         facts.push((tr("Speech model"), model));
     }
-    facts.push((tr("Latency"), latency));
+    if entry.kind == HistoryKind::Teleprompter {
+        let seconds = entry.audio_ms / 1000;
+        facts.push((
+            tr("Duration"),
+            format!("{}:{:02}", seconds / 60, seconds % 60),
+        ));
+    } else {
+        facts.push((tr("Latency"), latency));
+    }
     let mut body = col().key("detail-body").gap(20.0).child(
         text(entry.final_text.clone())
             .key("final")
@@ -774,6 +786,9 @@ fn detail(ui: &Ui, p: Paint, layer: &mut Vec<El>) -> El {
                         .wrap(),
                 ),
         );
+    }
+    if entry.kind == HistoryKind::Teleprompter {
+        body = body.child(export_section(ui, p, id));
     }
     body = body.child(ld::facts(p, facts));
     if ui.settings.labs.keep_recordings && entry.has_recording() {
@@ -801,6 +816,57 @@ fn detail(ui: &Ui, p: Paint, layer: &mut Vec<El>) -> El {
             ],
         ))
         .child(ld::card_scroll(p, "detail-scroll", body))
+}
+
+/// A Teleprompter session's Save as .txt and .srt, and where the last went.
+fn export_section(ui: &Ui, p: Paint, id: u64) -> El {
+    let save = |subtitles: bool| {
+        move |ui: &mut Ui, _: &mut Tx| {
+            let Some(entry) = ui.history.entry(id).cloned() else {
+                return;
+            };
+            let saved = crate::teleprompter::export(&entry, subtitles)
+                .map(|path| path.display().to_string());
+            ui.history.exported = Some((id, saved));
+        }
+    };
+    let note = ui
+        .history
+        .exported
+        .as_ref()
+        .filter(|(exported, _)| *exported == id)
+        .map(|(_, saved)| match saved {
+            Ok(path) => (tr_fill("Saved to {}", path), p.muted()),
+            Err(error) => (tr_fill("Couldn't save it: {}", error), p.danger()),
+        });
+    col()
+        .key("export")
+        .gap(6.0)
+        .child(section_label(p, "label", tr("Export")))
+        .child(
+            row()
+                .key("buttons")
+                .gap(8.0)
+                .child(small_button(
+                    p,
+                    "export-txt",
+                    tr("Save as .txt"),
+                    save(false),
+                ))
+                .child(small_button(
+                    p,
+                    "export-srt",
+                    tr("Save as .srt"),
+                    save(true),
+                )),
+        )
+        .children(note.map(|(copy, color)| {
+            text(copy)
+                .key("export-note")
+                .font(p.k.ty.small)
+                .color(color)
+                .wrap()
+        }))
 }
 
 /// Labs › Keep recordings: Transcribe again's menu of installed models, and

@@ -243,6 +243,10 @@ fn command(host: &dyn Host, command: ControlCommand) -> ControlReply {
         | ControlCommand::ScrawlCaptureSend { .. }
         | ControlCommand::ScrawlCaptureUndo
         | ControlCommand::ScrawlCaptureRoute { .. }) => host.annotate(command),
+        ControlCommand::Teleprompter { action } => reply(host.state().map(|state| {
+            let enabled = crate::labs::Feature::Teleprompter.on(&state.settings);
+            crate::teleprompter::command(action, enabled)
+        })),
     }
 }
 

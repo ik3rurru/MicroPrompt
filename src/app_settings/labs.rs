@@ -85,6 +85,10 @@ pub struct LabsSettings {
     pub follow_live_transcript: bool,
     /// Meetings offers Import audio…: a local audio file becomes a meeting (macOS).
     pub meeting_import: bool,
+    /// MicroPrompt: `hex teleprompter` transcribes the microphone live (Linux, Windows).
+    pub teleprompter: bool,
+    /// The Teleprompter's start-and-stop shortcut (Windows); unbound by default.
+    pub teleprompter_hotkey: Option<crate::app_settings::HotkeyBinding>,
     /// With `labs.annotate_replay` on, keeps a rolling 15 s display buffer via `SCClipBufferingOutput` (macOS 27+).
     pub annotate_replay: bool,
     /// Calls in more apps (Signal, Telegram, WeChat, LINE, Webex, Element, Phone) and on more websites are offered and named.
@@ -146,6 +150,8 @@ impl Default for LabsSettings {
             screenshots: false,
             follow_live_transcript: false,
             meeting_import: false,
+            teleprompter: false,
+            teleprompter_hotkey: None,
             groups: std::collections::BTreeMap::new(),
         }
     }

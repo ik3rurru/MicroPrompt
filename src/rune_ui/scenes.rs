@@ -88,6 +88,28 @@ pub(super) const SCENES: &[Scene] = &[
         ui.history.clear_armed = true;
         ui.pane = Pane::History;
     }),
+    // MicroPrompt: a kept Teleprompter session, selected, just saved as .srt.
+    ("history-teleprompter", |ui| {
+        *ui = portal_fixture();
+        ui.history = history::HistoryPane::fixture();
+        let mut session = ui.history.entries[0].clone();
+        session.id = 4;
+        session.kind = crate::history::HistoryKind::Teleprompter;
+        session.application = None;
+        session.audio_ms = 25_980;
+        session.inference_ms = 0;
+        session.total_ms = 0;
+        session.model = Some("Nemotron 3.5 ASR".into());
+        session.final_text = "Hola, esto es una prueba de subtítulos en directo. MicroPrompt escribe lo que digo mientras hablo.".into();
+        session.raw_text = session.final_text.clone();
+        ui.history.entries.insert(0, session);
+        ui.history.selected = Some(4);
+        ui.history.exported = Some((
+            4,
+            Ok("C:\\Users\\you\\Documents\\MicroPrompt\\Teleprompter 2026-11-07 21-30.srt".into()),
+        ));
+        ui.pane = Pane::History;
+    }),
     ("history-empty", |ui| {
         *ui = portal_fixture();
         ui.history = history::HistoryPane::fixture_empty();
@@ -694,6 +716,39 @@ pub(super) const SCENES: &[Scene] = &[
     ("mac-production", |ui| {
         *ui = mac_fixture();
         ui.settings.meetings.enabled = false;
+    }),
+    // MicroPrompt: a session with closed lines and words still settling.
+    ("teleprompter", |ui| {
+        *ui = fixture(DesktopShortcuts::Registered);
+        ui.platform = platform::PlatformState::preview(platform::Capabilities::WINDOWS);
+        ui.host = platform::PlatformHost::Fixture(Vec::new());
+        ui.settings.labs.teleprompter = true;
+        ui.pane = Pane::Teleprompter;
+        ui.platform.teleprompter = crate::teleprompter::View {
+            running: true,
+            segments: vec![
+                "Hola, esto es una prueba de subtítulos en directo.".into(),
+                "MicroPrompt escribe lo que digo mientras hablo.".into(),
+                "La latencia tiene que ser baja para leer cómodo, también cuando la frase es larga y ocupa más de una línea.".into(),
+            ],
+            stable: "Después vendrá el guion".into(),
+            tentative: " que sigue mi".into(),
+            ..Default::default()
+        };
+    }),
+    ("teleprompter-idle", |ui| {
+        *ui = fixture(DesktopShortcuts::Registered);
+        ui.platform = platform::PlatformState::preview(platform::Capabilities::WINDOWS);
+        ui.host = platform::PlatformHost::Fixture(Vec::new());
+        ui.settings.labs.teleprompter = true;
+        ui.settings.labs.teleprompter_hotkey =
+            serde_json::from_value(serde_json::json!({ "keys": [
+                { "modifier": "control", "side": "any" },
+                { "modifier": "option", "side": "any" },
+                { "code": 17, "label": "T" },
+            ]}))
+            .ok();
+        ui.pane = Pane::Teleprompter;
     }),
     ("mac-activity", |ui| {
         *ui = mac_fixture();

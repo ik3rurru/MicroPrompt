@@ -208,6 +208,12 @@ const KEYS: &[Key] = &[
          nothing pasted or saved. Hex takes the key only while a toggled recording runs",
     ),
     optional(
+        "labs.teleprompter_hotkey",
+        Kind::Shortcut(HotkeySlot::Teleprompter),
+        "Labs › Teleprompter: starts and stops the session (Windows); none (the default) \
+         turns it off. On Linux, bind `hex teleprompter toggle` in the desktop",
+    ),
+    optional(
         "raw_dictation_hotkey",
         Kind::Shortcut(HotkeySlot::RawDictation),
         "Dictate without processing: dictates and pastes the words as heard, skipping \
@@ -473,6 +479,11 @@ const KEYS: &[Key] = &[
         "labs.follow_live_transcript",
         Kind::Bool,
         "Labs: while a meeting records, its transcript in Meetings scrolls to the newest line; scroll up to read earlier text, back to the bottom to follow again",
+    ),
+    key(
+        "labs.teleprompter",
+        Kind::Bool,
+        "Labs: hex teleprompter start, stop, and status transcribe the microphone live (Linux, Windows)",
     ),
     key(
         "labs.meeting_import",
@@ -1016,7 +1027,8 @@ pub fn apply(
         | "cancel_hotkey"
         | "screenshots.hotkey"
         | "capture.hotkey"
-        | "capture.replay_hotkey" => {
+        | "capture.replay_hotkey"
+        | "labs.teleprompter_hotkey" => {
             let Kind::Shortcut(slot) = key.kind else {
                 unreachable!("shortcut keys have the shortcut kind");
             };
@@ -1027,6 +1039,7 @@ pub fn apply(
                 HotkeySlot::SecondDictation => candidate.second_dictation_hotkey.as_ref(),
                 HotkeySlot::Cancel => Some(&candidate.cancel_hotkey),
                 HotkeySlot::Screenshot => Some(&candidate.screenshots.hotkey),
+                HotkeySlot::Teleprompter => candidate.labs.teleprompter_hotkey.as_ref(),
                 #[cfg(hex_capture)]
                 HotkeySlot::Capture => Some(&candidate.capture.hotkey),
                 #[cfg(hex_capture)]
