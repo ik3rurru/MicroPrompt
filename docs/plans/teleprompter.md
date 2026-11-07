@@ -276,16 +276,35 @@ Siguiendo las convenciones del repo (`AGENTS.md`, `docs/features/labs.md`):
 En orden de coste:
 
 1. **Mostrar ya lo tentativo**: el overlay lo pinta en cuanto llega.
-2. **Chunks más cortos**: `HEX_STREAM_CHUNK_MS` ya cambia el chunk y el
-   contexto derecho de Parakeet (por defecto 1040 ms;
-   `src/transcription/gguf_session.rs`). El artefacto de Nemotron también
-   declara arquitectura `parakeet`, así que probablemente le afecta; hay que
-   comprobarlo.
-   - Medir la latencia de los parciales y la precisión con 560, 320 y
-     160 ms.
-   - En la RTX 5070 Ti, 560 y 160 ms empeoraron el dictado en inglés sin
-     acelerarlo. Para subtítulos importa otra métrica, la latencia de los
-     parciales, que aún no se ha medido.
+2. **Chunks más cortos** (medido el 7 de noviembre de 2026):
+   - `HEX_STREAM_CHUNK_MS` **no sirve para Nemotron**. Pide el streaming
+     "buffered" de Parakeet Unified (`ParakeetBuffered`), y Nemotron, que es
+     cache-aware, lo rechaza: `stream begin: invalid argument`. Hex se queda
+     sin parciales.
+   - Su control es `att_context_right` (`ParakeetStream`) ∈ {13, 6, 3, 0}, que
+     equivale a 1040, 480, 240 y 0 ms de anticipación. Hex no lo expone y
+     usa siempre 13.
+   - Medido fuera de Hex con
+     [`lookahead.py`](../../tools/microprompt-captions/lookahead.py): el
+     mismo transcribe.cpp 0.4.1, el mismo GGUF Q8_0 y la RTX 5070 Ti, sobre
+     el WAV en español de 25,6 s:
+
+     | R | Parcial cada | Palabra en pantalla tras decirla (mediana / p90) | WER | GPU |
+     | ---: | ---: | ---: | ---: | ---: |
+     | 13 (Hex hoy) | 1120 ms | 493 / 1053 ms | 0 % | 7 % |
+     | 6 | 560 ms | 256 / 493 ms | 0 % | 5 % |
+     | **3** | **320 ms** | **172 / 413 ms** | **0 %** | **6 %** |
+     | 0 | 160 ms | 410 / 570 ms | 2,2 % (pierde "Hola") | 12 % |
+
+     R=3 recorta unos 320 ms en la mediana y 640 ms en el p90 sin perder
+     precisión en este clip. R=0 es peor en todo. Es un único clip de voz
+     sintética: hay que confirmarlo con voz real y más frases. El retraso
+     extra de Hex (ventanas, SSE) va aparte.
+   - Para usarlo en Hex basta un cambio pequeño en
+     `src/transcription/gguf_session.rs`: pasar
+     `StreamExtension::ParakeetStream { att_context_right }` a los modelos
+     cache-aware, por ejemplo con `HEX_STREAM_ATT_RIGHT`. Necesita compilar
+     el fork (Fase 0).
 3. **Ajustar las pausas** para subtítulos: pausa de 600 ms y trozo mínimo de
    3 s en `pause_segmenter.rs`. Cerrar líneas antes hace que suban antes.
 4. **Sin GPU o con modelos sin streaming** (Parakeet v3, el más preciso en

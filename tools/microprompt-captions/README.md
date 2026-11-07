@@ -137,19 +137,21 @@ Anota el resumen de latencia de cada sesión y los errores de transcripción
 más frecuentes en español. Con esos datos se decide la Fase 4 del plan
 (chunks más cortos, ajuste de pausas o el modo "local agreement").
 
-Para probar chunks más cortos (afecta a Parakeet, y probablemente a
-Nemotron, cuyo artefacto también declara arquitectura `parakeet`), arranca
-Hex desde PowerShell con la variable puesta:
+Chunks más cortos: `HEX_STREAM_CHUNK_MS` sólo afecta a Parakeet Unified
+English. Con Nemotron, Hex rechaza la opción al empezar el stream y se queda
+**sin parciales**, así que no la pongas. El ajuste de Nemotron es la
+anticipación (`att_context_right`), que Hex no expone. `lookahead.py` la mide
+fuera de Hex, con el mismo motor y el mismo modelo:
 
 ```powershell
-hex quit
-$env:HEX_STREAM_CHUNK_MS = "560"; hex app
+py -m pip install transcribe-cpp
+py lookahead.py "$env:APPDATA\hex\models\nemotron-3.5-asr-streaming-0.6b-Q8_0.gguf" prueba.wav "texto que se dice"
 ```
 
-En la RTX 5070 Ti, el equipo de Hex vio que chunks de 560 y 160 ms causaban
-más errores y hasta un 20 % de GPU, sin acelerar el final del dictado
-(`docs/features/dictation.md`). Para subtítulos lo que cuenta es la latencia
-de los parciales, que aún no se ha medido.
+En la RTX 5070 Ti, R=3 (un parcial cada 320 ms) mostró cada palabra a unos
+170 ms de decirla (mediana), frente a unos 490 ms con R=13, el valor que usa
+Hex, sin perder precisión en un clip de 25 s. Detalles en el
+[plan](../../docs/plans/teleprompter.md), Fase 4.
 
 ## Distinguir quién habla (`--speakers`)
 
