@@ -166,6 +166,28 @@ bandeja). Así `git merge upstream/dev` sigue siendo viable.
 
 ### Fase 0: preparar el fork (de 1 a 2 días)
 
+Hecho en Windows el 7 de noviembre de 2026, salvo el renombrado. Se compila
+con `scripts/setup-windows.ps1` (instaló CMake 4.4.4 y el SDK de Vulkan
+1.4.363) y `cargo build --bin hex`, que tarda 3 min la primera vez; el motor
+C++ se compila en Release también en debug. El fork convive con el Hex
+instalado sin renombrar nada: con `HEX_APPLICATION_SUPPORT_DIR` usa su propia
+carpeta de ajustes, logs y modelos, su propio `local-api.json` y su propio
+evento de instancia única, y no se actualiza solo (`NotInstalled`).
+
+```powershell
+$env:HEX_APPLICATION_SUPPORT_DIR = "$env:APPDATA\microprompt"
+$env:HEX_STREAM_ATT_RIGHT = "3"   # opcional: parciales cada 320 ms (Fase 4.2)
+.\target\debug\hex.exe app
+py tools\microprompt-captions\captions.py --discovery "$env:APPDATA\microprompt\local-api.json" --open
+```
+
+Para no volver a descargar modelos, enlaza los del Hex instalado:
+`New-Item -ItemType HardLink -Path "$env:APPDATA\microprompt\models\<fichero>" -Target "$env:APPDATA\hex\models\<fichero>"`.
+Si los dos están abiertos, los dos responden al atajo de dictado.
+
+El renombrado (nombre, identificadores, actualizador) queda para cuando haya
+que empaquetar: tocar esas rutas ahora complicaría los `merge` con upstream.
+
 - Compilar y ejecutar el fork tal cual en Windows (`docs/windows.md`:
   `scripts/setup-windows.ps1`, el SDK de Vulkan y `cargo run -- app`).
   Comprobar en **Settings › Speech engine** que usa la RTX 5070 Ti.
@@ -300,11 +322,24 @@ En orden de coste:
      precisión en este clip. R=0 es peor en todo. Es un único clip de voz
      sintética: hay que confirmarlo con voz real y más frases. El retraso
      extra de Hex (ventanas, SSE) va aparte.
-   - Para usarlo en Hex basta un cambio pequeño en
-     `src/transcription/gguf_session.rs`: pasar
-     `StreamExtension::ParakeetStream { att_context_right }` a los modelos
-     cache-aware, por ejemplo con `HEX_STREAM_ATT_RIGHT`. Necesita compilar
-     el fork (Fase 0).
+   - **Hecho en el fork**: `HEX_STREAM_ATT_RIGHT` (en
+     `src/transcription/gguf_session.rs`) pasa
+     `StreamExtension::ParakeetStream { att_context_right }`; sin la
+     variable, nada cambia. Medido con `captions.py` contra el fork, con el
+     mismo WAV:
+
+     | | Primeras palabras | Parcial cada | Frase final tras su audio | Texto |
+     | --- | ---: | ---: | ---: | --- |
+     | R=13 (por defecto) | 1,20 s | 1,16 s | 0,02 s | exacto |
+     | R=3 | 0,90 s | 0,30–0,31 s | 0,02–0,04 s | exacto (2 pasadas) |
+
+     La variable afecta a todo el streaming del proceso, también al dictado
+     con el atajo. Con R=13 el texto final del streaming es idéntico al del
+     clip completo; con R=3 puede variar.
+   - Con voz real y micrófono (1 min, R=3) se percibió "bastante rápido" y
+     sin pérdidas tras las pausas, con un error ("de espacio" por
+     "despacio"). Primera sesión con R=13: "bastante lento". R=3 es el valor
+     a usar para el teleprompter nativo (Fase 2).
 3. **Ajustar las pausas** para subtítulos: pausa de 600 ms y trozo mínimo de
    3 s en `pause_segmenter.rs`. Cerrar líneas antes hace que suban antes.
 4. **Sin GPU o con modelos sin streaming** (Parakeet v3, el más preciso en

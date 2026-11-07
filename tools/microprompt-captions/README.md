@@ -69,24 +69,26 @@ idioma.
 
 ## La página de subtítulos
 
-`http://127.0.0.1:8765/` admite opciones en la URL:
+`http://127.0.0.1:8765/` muestra sólo texto: toda la sesión, que sube según
+hablas. Puedes hacer scroll hacia arriba para releer; al volver abajo sigue
+el texto nuevo. Admite opciones en la URL:
 
 | Opción | Qué hace | Por defecto |
 | --- | --- | --- |
 | `size` | tamaño de letra en px | `56` |
-| `lines` | líneas visibles; `all` muestra toda la sesión con scroll (sigue el texto nuevo mientras estés abajo) | `3` |
+| `lines` | número fijo de líneas visibles, las anteriores salen por arriba (para OBS) | toda la sesión |
 | `align` | `center` o `left` | `center` |
 | `position` | `bottom`, `middle` o `top` | `bottom` |
 | `width` | ancho del bloque, en % de la ventana | `90` |
 | `fg`, `dim`, `bg` | colores del texto, de las palabras provisionales y del fondo (`#` se escribe `%23`) | blanco, gris, negro |
 | `font`, `weight` | familia y grosor de letra | fuente del sistema, `600` |
 | `transparent=1` | fondo transparente con contorno, para OBS | |
-| `status=0` | oculta la línea de estado | |
+| `status=1` | muestra la línea de estado (conexión, modelo, errores) | oculta |
 
 Ejemplos:
 
 - **OBS**: añade una fuente *Navegador* (Browser Source) con
-  `http://127.0.0.1:8765/?transparent=1&status=0&size=64&lines=2` y su ancho y
+  `http://127.0.0.1:8765/?transparent=1&size=64&lines=2` y su ancho y
   alto de lienzo.
 - **Segunda pantalla**: abre la página y pulsa `F11`.
 - **Ventana pequeña siempre encima**: abre una ventana sin barras con
@@ -120,6 +122,12 @@ fantasma de sólo "¿" en un silencio. Sensación al usarlo: correcto, pero
 "bastante lento"; el texto va algo más de un segundo por detrás de la voz.
 Sólo se oye el micrófono, no el audio de Windows.
 
+Con el fork y `HEX_STREAM_ATT_RIGHT=3` (mismo micrófono, 1 min de habla
+libre): 13 frases. La sensación cambió a "bastante rápido", "es una mejora",
+"aceptable", y no se perdió nada tras las pausas. Un error: "despacio" salió
+"de espacio", y bien al repetirlo. A algunas frases les faltó el punto final,
+como ya pasaba con el valor por defecto.
+
 Ojo: si la GPU falla una vez (Hex guardó un "out of memory" con Cohere en la
 RTX), Hex la apunta en `%APPDATA%\hex\gpu-failures.json` y en modo Auto pasa
 a la CPU, sin parciales. `hex settings set transcription_device gpu` (o
@@ -150,8 +158,12 @@ py lookahead.py "$env:APPDATA\hex\models\nemotron-3.5-asr-streaming-0.6b-Q8_0.gg
 
 En la RTX 5070 Ti, R=3 (un parcial cada 320 ms) mostró cada palabra a unos
 170 ms de decirla (mediana), frente a unos 490 ms con R=13, el valor que usa
-Hex, sin perder precisión en un clip de 25 s. Detalles en el
-[plan](../../docs/plans/teleprompter.md), Fase 4.
+Hex, sin perder precisión en un clip de 25 s.
+
+El fork lo expone como `HEX_STREAM_ATT_RIGHT`. Con el valor 3, a través de
+Hex los parciales llegan cada 0,30 s en vez de cada 1,16 s, y las primeras
+palabras a los 0,90 s en vez de 1,20 s. Cómo arrancar el fork y usar
+`--discovery` con él: [plan](../../docs/plans/teleprompter.md), Fases 0 y 4.
 
 ## Distinguir quién habla (`--speakers`)
 

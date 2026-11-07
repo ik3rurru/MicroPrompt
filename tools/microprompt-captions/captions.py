@@ -369,8 +369,8 @@ class Captions:
     """Completed segments plus the window being transcribed, and every
     change for the page's subscribers."""
 
-    # ponytail: the page gets every line on each update (?lines=all scrolls
-    # through them); 2000 lines is hours of talk, trim on the page if it ever lags.
+    # ponytail: the page gets every line on each update (by default it scrolls
+    # through them all); 2000 lines is hours of talk, trim on the page if it ever lags.
     def __init__(self, keep: int = 2000):
         self.keep = keep
         self.lock = threading.Condition()

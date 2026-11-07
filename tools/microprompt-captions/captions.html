@@ -7,7 +7,7 @@
 <style>
   /* Options come from the URL, e.g. /?size=72&lines=2&align=left&transparent=1
      size      font size in px (default 56)
-     lines     visible lines (default 3); all = the whole session, scrollable
+     lines     visible lines (default: the whole session, scrollable)
      align     center | left (default center)
      position  bottom | top | middle (default bottom)
      width     max width of the text block, in % of the window (default 90)
@@ -15,7 +15,7 @@
      font      font family (default system UI)
      weight    font weight (default 600)
      transparent=1  transparent background with an outline, for OBS
-     status=0  hide the status line
+     status=1  show the status line (hidden by default)
      With speakers (captions.py --speakers), each turn starts a new line
      under its speaker's name:
      who=0     hide the names (colours still tell turns apart with tint=1)
@@ -66,7 +66,7 @@
     -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 calc(var(--size) * 0.18));
     mask-image: linear-gradient(to bottom, transparent 0, #000 calc(var(--size) * 0.18));
   }
-  /* lines=all: the window fills the screen and keeps the whole session;
+  /* Default (no lines=N): the window fills the screen and keeps the whole session;
      scroll up to read back, and it follows new text again at the bottom.
      margin-top:auto (not justify-content) keeps the top reachable. */
   body.all #frame { height: 100%; display: flex; flex-direction: column; padding-top: 36px; }
@@ -139,7 +139,8 @@
   if (size) root.setProperty("--size", size + "px");
   const lines = number("lines", 1, 20);
   if (lines) root.setProperty("--lines", String(lines));
-  const all = params.get("lines") === "all";
+  // The whole session, scrolling, unless a number of lines is asked for.
+  const all = !lines;
   if (all) document.body.classList.add("all");
   const width = number("width", 10, 100);
   if (width) root.setProperty("--width", width + "vw");
@@ -154,7 +155,7 @@
   const position = params.get("position");
   if (position === "top" || position === "middle") document.body.classList.add(position);
   if (params.get("transparent") === "1") document.body.classList.add("transparent");
-  if (params.get("status") === "0") document.body.classList.add("nostatus");
+  if (params.get("status") !== "1") document.body.classList.add("nostatus");
   if (params.get("who") === "0") document.body.classList.add("nowho");
   const tint = params.get("tint") === "1";
   // One colour per speaker number, readable on a dark background.

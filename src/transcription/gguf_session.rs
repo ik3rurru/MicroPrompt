@@ -207,7 +207,8 @@ impl OfflineGgufSession {
     /// (Unified English: 5.6 s, 1.04 s, 1.04 s), its most accurate and least
     /// compute-intensive setting. `HEX_STREAMING=0` keeps the model offline
     /// and `HEX_STREAMING=1` streams on any device (diagnostics and CI);
-    /// `HEX_STREAM_CHUNK_MS` overrides the chunk and right context.
+    /// `HEX_STREAM_CHUNK_MS` overrides the chunk and right context;
+    /// `HEX_STREAM_ATT_RIGHT` picks a cache-aware model's lookahead instead.
     pub(crate) fn probe_stream(
         &mut self,
         options: &transcribe_cpp::RunOptions,
@@ -230,19 +231,31 @@ impl OfflineGgufSession {
         if !forced && !matches!(device_type, DeviceType::Gpu | DeviceType::Igpu) {
             return None;
         }
-        let chunk_ms = std::env::var("HEX_STREAM_CHUNK_MS")
-            .ok()
-            .and_then(|value| value.parse::<i32>().ok());
+        let env_ms = |name| {
+            std::env::var(name)
+                .ok()
+                .and_then(|value| value.parse::<i32>().ok())
+        };
+        let chunk_ms = env_ms("HEX_STREAM_CHUNK_MS");
+        // MicroPrompt: cache-aware models (Nemotron) reject the buffered
+        // options above and take a lookahead instead; 3 = 240 ms, a partial
+        // every 320 ms (tools/microprompt-captions/lookahead.py).
+        let att_context_right = env_ms("HEX_STREAM_ATT_RIGHT");
+        let family = match (architecture == "parakeet", att_context_right, chunk_ms) {
+            (true, Some(_), _) => Some(transcribe_cpp::StreamExtension::ParakeetStream(
+                transcribe_cpp::ParakeetStreamOptions { att_context_right },
+            )),
+            (true, None, Some(_)) => Some(transcribe_cpp::StreamExtension::ParakeetBuffered(
+                transcribe_cpp::ParakeetBufferedStreamOptions {
+                    left_ms: None,
+                    chunk_ms,
+                    right_ms: chunk_ms,
+                },
+            )),
+            _ => None,
+        };
         let stream_options = transcribe_cpp::StreamOptions {
-            family: (architecture == "parakeet" && chunk_ms.is_some()).then_some(
-                transcribe_cpp::StreamExtension::ParakeetBuffered(
-                    transcribe_cpp::ParakeetBufferedStreamOptions {
-                        left_ms: None,
-                        chunk_ms,
-                        right_ms: chunk_ms,
-                    },
-                ),
-            ),
+            family,
             ..Default::default()
         };
         let started = std::time::Instant::now();
@@ -260,6 +273,7 @@ impl OfflineGgufSession {
                 tracing::info!(
                     ?device_type,
                     chunk_ms,
+                    att_context_right,
                     prewarm_ms = started.elapsed().as_millis(),
                     "streaming transcription is available"
                 );
