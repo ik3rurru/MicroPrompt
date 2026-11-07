@@ -199,6 +199,15 @@ impl WarmTranscriber {
         }
     }
 
+    /// Stream options `/streams` (captions) use; see
+    /// `OfflineGgufSession::captions_stream`.
+    pub(crate) fn captions_stream_options(&self) -> Option<&transcribe_cpp::StreamOptions> {
+        match &self.active {
+            Some(Transcriber::Gguf(model)) => model.captions_stream_options(),
+            _ => None,
+        }
+    }
+
     pub(crate) fn with_stream<R>(
         &mut self,
         stream_options: &transcribe_cpp::StreamOptions,

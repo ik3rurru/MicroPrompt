@@ -1246,7 +1246,7 @@ impl Worker {
     ) {
         let Some(options) = self
             .model()
-            .and_then(|model| model.stream_options().cloned())
+            .and_then(|model| model.captions_stream_options().cloned())
         else {
             return;
         };

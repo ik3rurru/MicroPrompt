@@ -160,9 +160,10 @@ En la RTX 5070 Ti, R=3 (un parcial cada 320 ms) mostró cada palabra a unos
 170 ms de decirla (mediana), frente a unos 490 ms con R=13, el valor que usa
 Hex, sin perder precisión en un clip de 25 s.
 
-El fork lo expone como `HEX_STREAM_ATT_RIGHT`. Con el valor 3, a través de
-Hex los parciales llegan cada 0,30 s en vez de cada 1,16 s, y las primeras
-palabras a los 0,90 s en vez de 1,20 s. Cómo arrancar el fork y usar
+El fork usa R=3 para los subtítulos sin tener que configurar nada (el
+dictado con el atajo sigue en R=13); `HEX_STREAM_ATT_RIGHT` fija otro valor
+para todo. Con R=3, a través de Hex los parciales llegan cada 0,30 s en vez
+de cada 1,16 s, y las primeras palabras a los 0,90 s en vez de 1,20 s. Cómo arrancar el fork y usar
 `--discovery` con él: [plan](../../docs/plans/teleprompter.md), Fases 0 y 4.
 
 ## Distinguir quién habla (`--speakers`)

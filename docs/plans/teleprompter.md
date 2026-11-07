@@ -176,7 +176,6 @@ evento de instancia única, y no se actualiza solo (`NotInstalled`).
 
 ```powershell
 $env:HEX_APPLICATION_SUPPORT_DIR = "$env:APPDATA\microprompt"
-$env:HEX_STREAM_ATT_RIGHT = "3"   # opcional: parciales cada 320 ms (Fase 4.2)
 .\target\debug\hex.exe app
 py tools\microprompt-captions\captions.py --discovery "$env:APPDATA\microprompt\local-api.json" --open
 ```
@@ -336,6 +335,15 @@ En orden de coste:
      La variable afecta a todo el streaming del proceso, también al dictado
      con el atajo. Con R=13 el texto final del streaming es idéntico al del
      clip completo; con R=3 puede variar.
+   - **Por defecto desde CA-01**: sin variables, los streams de `/streams`
+     (subtítulos) usan R=3 y el dictado con el atajo sigue en R=13
+     (`OfflineGgufSession::captions_stream`). Un modelo que no acepta R
+     (Parakeet Unified) hace los subtítulos como el dictado.
+     `HEX_STREAM_ATT_RIGHT` o `HEX_STREAM_CHUNK_MS` siguen fijando un valor
+     para todo. Medido con el WAV de Helena: subtítulos con parciales cada
+     0,31 s y primeras palabras a 0,90 s; el dictado (`HEX_AUDIO_FIXTURE` y
+     `hex dictation stop --print`) dio el mismo texto y los mismos 15
+     parciales que antes del cambio.
    - Con voz real y micrófono (1 min, R=3) se percibió "bastante rápido" y
      sin pérdidas tras las pausas, con un error ("de espacio" por
      "despacio"). Primera sesión con R=13: "bastante lento". R=3 es el valor
@@ -445,9 +453,21 @@ las fases 1 a 4. Sólo cambian el board y la vista.
 
 ## Decisiones abiertas
 
-1. ~~Sistema operativo y GPU~~: Windows x64 con una RTX 5070 Ti (resuelto).
-2. Idioma: ¿sólo español, o también inglés y otros?
-3. ¿Subtítulos de lo que dices (este plan) o teleprompter con guion (Fase 5)?
-   ¿O las dos cosas?
-4. ¿Dónde se ven? ¿Overlay encima de todo, ventana para OBS o segunda
-   pantalla?
+Resueltas el 7 de noviembre de 2026; las tareas están en el tablero
+(`kanvas.json`).
+
+1. Sistema operativo y GPU: Windows x64 con una RTX 5070 Ti, sólo este PC,
+   sin instalador ni renombrado.
+2. Idioma: español e inglés, a elegir al empezar cada sesión.
+3. Usos: leer tu propia voz en vivo, reuniones y llamadas, y teleprompter
+   con guion (de un fichero `.txt` o `.md`; si improvisas, muestra lo que
+   dices y retoma el guion al volver). Reuniones antes que el guion.
+4. Dónde se ven: una ventana normal de la app, dentro del fork (Rust/Rune),
+   con sólo texto. Se empieza y para con un botón en la ventana y con un
+   atajo de teclado.
+5. Fuentes de audio: micrófono, audio del sistema o ambos, a elegir por
+   sesión. En reuniones basta "Yo / Los demás" por fuente, sin Sortformer.
+6. Sesiones: se guardan en el historial de la app, exportables.
+7. El fork sustituirá al Hex instalado, dictado incluido.
+8. El prototipo de Python queda como banco de pruebas, sin funciones nuevas.
+9. Pendiente: si se traen cambios de Hex (upstream) y cada cuánto.
