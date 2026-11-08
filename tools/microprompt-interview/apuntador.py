@@ -102,8 +102,8 @@ def parse_guion(text: str) -> dict:
             ask.append(line[2:].strip())
     if ask:
         prepared.append(Prepared("Preguntas que haré", [
-            "¿Tienes alguna pregunta para nosotros?", "quieres preguntarnos algo",
-            "alguna duda sobre el puesto"], ask[:3]))
+            # Every phrasing needs "pregunta": "¿Tienes alguna experiencia…?" is no closing.
+            "alguna pregunta para nosotros", "alguna pregunta que quieras hacernos"], ask[:3]))
     return {"prepared": prepared, "ask": ask}
 
 
@@ -130,13 +130,20 @@ def match_prepared(question: str, prepared: list[Prepared], threshold: float = 0
 # When a question has ended
 # --------------------------------------------------------------------------
 
-# Words that open a question or a request once filler ("y", "bueno", "me")
-# is skipped. Nemotron often drops the question marks, so these matter.
-OPENERS = set("""que como cual cuales donde cuando cuanto cuanta cuantos cuantas quien quienes
-    cuentame hablame explicame describeme dime comentame imagina ponme
-    haces cuentas dices explicas describes puedes podrias sabes tienes has conoces quieres crees
-    piensas opinas ves consideras prefieres gestionas manejas valoras""".split())
-FILLER = {"y", "e", "bueno", "vale", "pues", "entonces", "ahora", "me", "nos", "te", "a", "ver", "y,"}
+# How a clause opens once filler ("y", "bueno", "me") is skipped. Nemotron
+# often drops the question marks, so these matter.
+REQUESTS = set("""cuentame cuentanos hablame hablanos explicame describeme dime comentame imagina ponme
+    gustaria queria quisiera""".split())
+# Second-person verbs: a question when the clause has some substance
+# ("Tienes alguna pregunta…", not "Tienes razón").
+YOU_VERBS = set("""haces cuentas dices explicas describes puedes podrias sabes tienes has conoces quieres
+    crees piensas opinas ves consideras prefieres gestionas manejas valoras dirias harias""".split())
+# Interrogatives: only in a sentence's last clause ("Como te decía, somos
+# seis" is no question) and with substance ("Que vaya bien" neither).
+# "cuando" is left out: without "?" it is nearly always "when".
+ASKING = set("""que como cual cuales donde cuanto cuanta cuantos cuantas quien quienes""".split())
+NOT_CONDITIONAL = {"varias", "diarias", "necesarias", "historias", "memorias", "primarias"}
+FILLER = {"y", "e", "bueno", "vale", "pues", "entonces", "ahora", "me", "nos", "te", "a", "ver"}
 
 
 def is_question(text: str) -> bool:
@@ -144,12 +151,21 @@ def is_question(text: str) -> bool:
     ("Cuéntame…", "Para empezar, me haces…", "Cómo diseñarías…")."""
     if "?" in text or "¿" in text:
         return True
-    for clause in re.split(r"[.!:;,]\s*", fold(text)):
-        words = re.findall(r"[a-z]+", clause)
-        while words and words[0] in FILLER:
-            words.pop(0)
-        if words and (words[0] in OPENERS or words[0].endswith("rias") or words[:2] == ["por", "que"]):
-            return True
+    for sentence in re.split(r"[.!:;]\s*", fold(text)):
+        clauses = sentence.split(",")
+        for index, clause in enumerate(clauses):
+            words = re.findall(r"[a-z]+", clause)
+            while words and words[0] in FILLER:
+                words.pop(0)
+            if not words:
+                continue
+            first, last = words[0], index == len(clauses) - 1
+            # Conditionals: diseñarías, harías, podrías, sabrías; not historias.
+            conditional = re.search(r"[aeidb]rias$", first) and first not in NOT_CONDITIONAL
+            if first in REQUESTS or ((first in YOU_VERBS or conditional) and len(words) >= 3):
+                return True
+            if last and len(words) >= 4 and (first in ASKING or words[:2] == ["por", "que"]):
+                return True
     return False
 
 
@@ -173,7 +189,7 @@ class Turns:
             self.texts = []
         self.texts.append(text)
         self.last_ms = at_ms
-        return " ".join(self.texts) if is_question(text) else None
+        return " ".join(self.texts) if any(is_question(t) for t in self.texts) else None
 
 
 # --------------------------------------------------------------------------
@@ -217,6 +233,8 @@ class Hex:
         conn.request("GET", f"/streams/{self.id}/events",
                      headers={"Authorization": f"Bearer {self.token}", "X-Hex-Stream-Token": self.owner})
         response = conn.getresponse()
+        if response.status != 200:
+            raise SystemExit(f"Hex respondió {response.status} a los eventos: {response.read().decode('utf-8', 'replace')}")
         for raw in response:
             line = raw.decode("utf-8").strip()
             if line.startswith("data:"):
@@ -293,20 +311,22 @@ class Ollama:
             response.read()
             conn.close()
 
-    def stream(self, question: str, cancel: threading.Event | None = None, num_predict: int = 120):
-        """Yields (piece_of_text, final_stats_or_None)."""
+    def stream(self, question: str, num_predict: int = 120, on_connect=None):
+        """Yields (piece_of_text, final_stats_or_None). `on_connect` gets the
+        connection, so another thread can close it: Ollama then stops
+        generating instead of finishing a stale answer before the next one."""
         conn, response = self._post("/api/chat", self.request(question, num_predict))
+        if on_connect:
+            on_connect(conn)
         try:
             if response.status != 200:
                 error = response.read().decode("utf-8", "replace")
                 if "think" in error and self.think is not None:
                     self.think = None  # the model has no thinking switch
-                    yield from self.stream(question, cancel, num_predict)
+                    yield from self.stream(question, num_predict, on_connect)
                     return
                 raise SystemExit(f"Ollama respondió {response.status}: {error}")
             for raw in response:
-                if cancel and cancel.is_set():
-                    return
                 message = json.loads(raw)
                 yield message.get("message", {}).get("content", ""), (message if message.get("done") else None)
         finally:
@@ -359,9 +379,15 @@ def serve(card: Card, port: int) -> None:
             pass
 
         def do_GET(self):
+            # Only this computer's own pages (no DNS rebinding from a website).
+            if self.headers.get("Host") not in (f"127.0.0.1:{port}", f"localhost:{port}"):
+                self.send_error(403)
+                return
             if self.path.split("?")[0] == "/events":
                 return self.events()
-            body = page.replace("/*INITIAL*/null", json.dumps(card.snapshot())).encode()
+            # "<" escaped: ASR or model text can't close the <script>.
+            state = json.dumps(card.snapshot()).replace("<", "\\u003c")
+            body = page.replace("/*INITIAL*/null", state).encode()
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))
@@ -422,7 +448,10 @@ class Session:
         self.turns = Turns()
         self.rows: dict = {}
         self.t0 = 0.0  # monotonic time of audio position 0
-        self.cancel = threading.Event()
+        self.lock = threading.Lock()
+        self.generation = 0  # the card being built; older generations are stale
+        self.connection: http.client.HTTPConnection | None = None
+        self.active_row: dict | None = None
         self.worker: threading.Thread | None = None
         self.segments_log: list[dict] = []
 
@@ -456,19 +485,16 @@ class Session:
         if question is None:
             return
         spoken_end = turn["endMs"] if turn else event["endMs"]
+        gen = self.supersede(row)
         # A turn that fires again replaces its earlier card.
         for stale in ("coincide", "puntuacion", "fuente", "puntos", "primerPuntoMs", "tresPuntosMs", "primerTokenMs",
-                      "promptTokens"):
+                      "promptTokens", "error", "cancelada"):
             row.pop(stale, None)
         row.update(pregunta=question, tarjeta=True, finPreguntaMs=spoken_end, segmentoMs=arrived - spoken_end)
         entry, score = match_prepared(question, self.guion["prepared"])
         row["coincide"], row["puntuacion"] = (entry.name if entry else None), round(score, 2)
         if self.args.solo_modelo:
             entry = None  # measure the model on every question
-        self.cancel.set()
-        if self.worker:
-            self.worker.join()
-        self.cancel = threading.Event()
         if entry is not None:
             row.update(fuente="guion", puntos=entry.points[:3], primerPuntoMs=arrived - spoken_end,
                        tresPuntosMs=arrived - spoken_end)
@@ -479,40 +505,83 @@ class Session:
         row["fuente"] = "modelo"
         self.card.update(question=question, source=f"Sugerido · {self.ollama.model}", points=[], typing="",
                          latency="", status="pensando…")
-        self.worker = threading.Thread(target=self.generate, args=(question, row, spoken_end, self.cancel), daemon=True)
+        self.active_row = row
+        self.worker = threading.Thread(target=self.generate, args=(question, row, spoken_end, gen), daemon=True)
         self.worker.start()
 
-    def generate(self, question: str, row: dict, spoken_end: int, cancel: threading.Event) -> None:
+    def supersede(self, row: dict) -> int:
+        """Starts a new card: the generation still running is stale. Its
+        connection is closed, so Ollama stops it at once instead of making the
+        new question wait (it answers one request at a time), and the event
+        thread never waits for it. A stale card that never finished counts as
+        cancelled, not as fast."""
+        with self.lock:
+            self.generation += 1
+            old, self.active_row = self.active_row, None
+            if old is not None and old is not row and "tresPuntosMs" not in old:
+                old["cancelada"] = True
+            if self.connection is not None:
+                try:
+                    self.connection.sock.shutdown(socket.SHUT_RDWR)
+                except (AttributeError, OSError):
+                    pass
+                self.connection = None
+            return self.generation
+
+    def generate(self, question: str, row: dict, spoken_end: int, gen: int) -> None:
+        def current() -> bool:
+            return gen == self.generation
+
+        def connected(conn) -> None:
+            with self.lock:
+                if current():
+                    self.connection = conn
+                else:
+                    conn.close()
+
+        def show(**changes) -> None:
+            with self.lock:  # never over a newer card
+                if current():
+                    self.card.update(**changes)
+
         points: list[str] = []
         buffer = ""
         first_token = None
         stats = None
-        for piece, done in self.ollama.stream(question, cancel):
-            if first_token is None and piece.strip():
-                first_token = self.now_ms()
-            buffer += piece
-            while "\n" in buffer and len(points) < 3:
-                line, buffer = buffer.split("\n", 1)
-                if clean_point(line):
-                    points.append(clean_point(line))
-                    if len(points) == 1:
-                        row["primerPuntoMs"] = self.now_ms() - spoken_end
-            if not cancel.is_set():
-                self.card.update(points=list(points), typing=clean_point(buffer) if len(points) < 3 else "")
-            stats = done or stats
-            if len(points) == 3:
-                break  # closing the response stops the generation
-        if len(points) < 3 and clean_point(buffer) and not cancel.is_set():
+        try:
+            for piece, done in self.ollama.stream(question, num_predict=120, on_connect=connected):
+                if not current():
+                    return
+                if first_token is None and piece.strip():
+                    first_token = self.now_ms()
+                buffer += piece
+                while "\n" in buffer and len(points) < 3:
+                    line, buffer = buffer.split("\n", 1)
+                    if clean_point(line):
+                        points.append(clean_point(line))
+                        if len(points) == 1:
+                            row["primerPuntoMs"] = self.now_ms() - spoken_end
+                show(points=list(points), typing=clean_point(buffer) if len(points) < 3 else "")
+                stats = done or stats
+                if len(points) == 3:
+                    break  # closing the response stops the generation
+        except (OSError, ValueError, http.client.HTTPException, SystemExit) as error:
+            if current():
+                row["error"] = str(error)
+                show(typing="", status=f"Ollama falló: {error}")
+                print(f"           → error de Ollama: {error}", file=sys.stderr)
+            return
+        if not current():
+            return
+        if len(points) < 3 and clean_point(buffer):
             points.append(clean_point(buffer))  # the last line has no newline
             row.setdefault("primerPuntoMs", self.now_ms() - spoken_end)
-        if cancel.is_set():
-            return
         row["tresPuntosMs"] = self.now_ms() - spoken_end
         row["puntos"] = points
         row["primerTokenMs"] = (first_token - spoken_end) if first_token else None
         if stats:
             row["promptTokens"] = stats.get("prompt_eval_count")
-        self.card.update(points=points, typing="", status="", latency=f"{row['tresPuntosMs'] / 1000:.1f} s")
+        show(points=points, typing="", status="", latency=f"{row['tresPuntosMs'] / 1000:.1f} s")
         print(f"           → {self.ollama.model}: {' | '.join(points)}  ({row.get('tresPuntosMs')} ms)")
 
     def feed_hex(self) -> None:
@@ -527,16 +596,20 @@ class Session:
         def push():
             self.t0 = time.monotonic()
             step = CHUNK * 2
-            for offset in range(0, len(pcm), step):
-                chunk = pcm[offset: offset + step]
-                due = self.t0 + (offset + len(chunk)) / 2 / RATE  # after the audio has "happened"
-                time.sleep(max(0.0, due - time.monotonic()))
-                hex_.call("POST", f"/streams/{hex_.id}/audio", chunk, "application/octet-stream")
-            silence = b"\0" * step
-            for _ in range(15):  # 1.5 s of silence closes the last window
-                time.sleep(0.1)
-                hex_.call("POST", f"/streams/{hex_.id}/audio", silence, "application/octet-stream")
-            hex_.call("POST", f"/streams/{hex_.id}/finish", timeout=130)
+            try:
+                for offset in range(0, len(pcm), step):
+                    chunk = pcm[offset: offset + step]
+                    due = self.t0 + (offset + len(chunk)) / 2 / RATE  # after the audio has "happened"
+                    time.sleep(max(0.0, due - time.monotonic()))
+                    hex_.call("POST", f"/streams/{hex_.id}/audio", chunk, "application/octet-stream")
+                silence = b"\0" * step
+                for _ in range(15):  # 1.5 s of silence closes the last window
+                    time.sleep(0.1)
+                    hex_.call("POST", f"/streams/{hex_.id}/audio", silence, "application/octet-stream")
+                hex_.call("POST", f"/streams/{hex_.id}/finish", timeout=130)
+            except (SystemExit, OSError) as error:  # a thread's SystemExit would vanish silently
+                self.card.update(status=f"Hex: {error}")
+                print(f"Error enviando audio a Hex: {error}", file=sys.stderr)
 
         threading.Thread(target=push, daemon=True).start()
         for event in events:
@@ -571,6 +644,8 @@ def summarize(rows: list[dict]) -> dict:
         "previstasAlGuion": sum(1 for r in rows if r.get("tipo") == "prevista" and r.get("coincide") == r.get("esperada")),
         "previstas": sum(1 for r in rows if r.get("tipo") == "prevista"),
         "imprevistasAlGuion": sum(1 for r in rows if r.get("tipo") == "imprevista" and r.get("coincide")),
+        # Sent to the model but never shown whole (cancelled by a newer question, or failed).
+        "modeloSinTerminar": sum(1 for r in rows if r.get("fuente") == "modelo" and r.get("tresPuntosMs") is None),
         "modeloTresPuntosMs": {"mediana": statistics.median(times), "peor": max(times)} if times else None,
         "modeloPrimerPuntoMs": {"mediana": statistics.median(firsts), "peor": max(firsts)} if firsts else None,
         "segmentoMs": statistics.median([r["segmentoMs"] for r in rows if r.get("segmentoMs") is not None] or [0]),
@@ -605,12 +680,18 @@ def main(argv: list[str] | None = None) -> int:
 
     guion_path = Path(args.guion)
     guion_text = guion_path.read_text(encoding="utf-8")
+    skip = {guion_path.name.lower(), "readme.md", "plantilla-guion.md"}
     context = [Path(p) for p in args.contexto] if args.contexto is not None else sorted(
-        p for p in guion_path.parent.glob("*.md") if p != guion_path)
+        p for p in guion_path.parent.iterdir()
+        if p.suffix.lower() in (".md", ".txt") and p.name.lower() not in skip)
     files = {"guion": guion_text, **{p.stem: p.read_text(encoding="utf-8") for p in context}}
+    print("Contexto:", ", ".join(p.name for p in context) or "ninguno")
     guion = parse_guion(guion_text)
     timeline_path = Path(args.timeline or Path(args.wav or HERE / "ejemplo" / "entrevista.wav").with_suffix(".timeline.json"))
     timeline = json.loads(timeline_path.read_text(encoding="utf-8"))["turnos"] if timeline_path.exists() else []
+    if not timeline:
+        print(f"Sin {timeline_path.name}: no mido la latencia desde el final real de cada pregunta "
+              "(se usa el final del segmento de Hex).", file=sys.stderr)
 
     ollama = Ollama(args.model, build_prefix(files))
     vram_before = VramWatch.now()

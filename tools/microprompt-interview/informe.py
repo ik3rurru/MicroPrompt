@@ -15,20 +15,28 @@ def seconds(ms) -> str:
     return "—" if ms is None else f"{ms / 1000:.1f}".replace(".", ",")
 
 
+def spread(values: list) -> str:
+    return f"{seconds(statistics.median(values))} / {seconds(max(values))} s" if values else "—"
+
+
 def main(paths: list[str]) -> int:
+    if not paths:
+        raise SystemExit(__doc__)
     runs = [json.loads(Path(p).read_text(encoding="utf-8")) for p in paths]
     print("| Modelo | VRAM del modelo | GPU con todo (pico) | Carga en frío | 1.er punto (mediana / peor) | 3 puntos (mediana / peor) | ≤ 4 s |")
     print("| --- | ---: | ---: | ---: | ---: | ---: | ---: |")
     for run in runs:
-        rows = [r for r in run["filas"] if r.get("fuente") == "modelo" and r.get("tresPuntosMs") is not None]
-        first = sorted(r["primerPuntoMs"] for r in rows if r.get("primerPuntoMs") is not None)
-        three = sorted(r["tresPuntosMs"] for r in rows)
+        asked = [r for r in run["filas"] if r.get("fuente") == "modelo"]
+        done = [r for r in asked if r.get("tresPuntosMs") is not None]
+        first = [r["primerPuntoMs"] for r in done if r.get("primerPuntoMs") is not None]
+        three = [r["tresPuntosMs"] for r in done]
         # nvidia-smi before and after loading: Ollama's own size_vram undercounts gemma4.
-        vram = (run["gpuMiB"]["cargado"] - run["gpuMiB"]["antes"]) / 1024
-        print(f"| {run['modelo']} | {seconds(vram * 1000)} GB | {seconds(run['gpuMiB']['pico'] / 1.024)} GB"
-              f" | {seconds(run['carga']['cargaMs'])} s"
-              f" | {seconds(statistics.median(first))} / {seconds(first[-1])} s | {seconds(statistics.median(three))} / {seconds(three[-1])} s"
-              f" | {sum(t <= 4000 for t in three)} de {len(three)} |")
+        gpu = run["gpuMiB"]
+        vram = (gpu["cargado"] - gpu["antes"]) * 1000 / 1024 if None not in (gpu["cargado"], gpu["antes"]) else None
+        peak = gpu["pico"] * 1000 / 1024 if gpu["pico"] is not None else None
+        # A card cancelled or failed counts as over budget.
+        print(f"| {run['modelo']} | {seconds(vram)} GB | {seconds(peak)} GB | {seconds(run['carga']['cargaMs'])} s"
+              f" | {spread(first)} | {spread(three)} | {sum(t <= 4000 for t in three)} de {len(asked)} |")
     print()
     questions = [r for r in runs[0]["filas"] if r.get("tipo") in ("prevista", "imprevista")]
     for number, question in enumerate(questions, 1):

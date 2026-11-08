@@ -26,9 +26,10 @@ audio del entrevistador ─► Hex /streams (Nemotron, GPU) ─► apuntador.py
 
 ## Escribe tu guion
 
-Copia [`plantilla-guion.md`](plantilla-guion.md) y rellénala; las
-instrucciones están dentro. Pon a su lado, en la misma carpeta, tu CV, la
-oferta y tus notas de la empresa como `.md` o `.txt` (los lee todos). En
+Copia [`plantilla-guion.md`](plantilla-guion.md) a una carpeta tuya y
+rellénala; las instrucciones están dentro. Pon a su lado tu CV, la oferta y
+tus notas de la empresa como `.md` o `.txt`: el apuntador lee todos los de
+esa carpeta (menos `README.md` y la plantilla) y al arrancar dice cuáles. En
 [`ejemplo/`](ejemplo/) hay un caso completo, ficticio: Alex García, backend,
 entrevista en "Rutalia".
 
@@ -110,6 +111,14 @@ Igual en todas las pasadas:
   frases ("Para empezar, me haces un pequeño resumen…", "Tienes alguna
   pregunta para nosotros."). Por eso el apuntador reconoce también cómo
   empieza cada frase: "me haces…", "cómo…", "cuéntame…", "tienes…".
+- Tras la revisión del código, esas reglas son más estrictas con frases
+  normales ("Como te decía…", "Tienes razón", "Cuando quieras empezamos" ya
+  no sacan tarjeta) y aceptan peticiones como "Me gustaría que me
+  contaras…" o "Quería preguntarte…". Con la misma transcripción grabada
+  salen ahora **10 de 10**, pero la que faltaba entra de chiripa ("Quería
+  si…" empieza como una petición). Las 3 frases que no son preguntas siguen
+  sin tarjeta (`resultados/revisado/`, sin Hex, con la transcripción
+  grabada).
 
 ### Modelos
 
@@ -314,4 +323,4 @@ debes confirmar con tus notas de arriba.
 | `tarjeta.html` | La página de la tarjeta. |
 | `informe.py` | Tablas de resultados en Markdown. |
 | `test_apuntador.py` | Pruebas de la detección de preguntas y del guion. |
-| `resultados/` | JSON de cada pasada: `solo-modelo/` (comparación), `con-guion/` (uso normal), `repeticion/` y `arranque/` (gemma4 en caliente y con el arranque corregido). |
+| `resultados/` | JSON de cada pasada: `solo-modelo/` (comparación), `con-guion/` (uso normal), `repeticion/` y `arranque/` (gemma4 en caliente y con el arranque corregido), `revisado/` (el código tras la revisión). |

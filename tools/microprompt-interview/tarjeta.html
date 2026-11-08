@@ -54,7 +54,7 @@
     list.replaceChildren();
     for (const point of s.points) {
       const li = document.createElement("li");
-      const m = point.match(/^(.*?)\s*(\(sugerencia\))$/i);
+      const m = point.match(/^(.*?)\s*(\(sugerencia\))[.\s]*$/i);
       li.textContent = m ? m[1] + " " : point;
       if (m) { const hint = document.createElement("span"); hint.className = "hint"; hint.textContent = m[2]; li.append(hint); }
       list.append(li);
