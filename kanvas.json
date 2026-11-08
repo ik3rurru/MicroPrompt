@@ -1,0 +1,251 @@
+{
+  "kanvas": 1,
+  "title": "MicroPrompt",
+  "groups": [
+    {
+      "id": "SU",
+      "name": "Subtítulos"
+    },
+    {
+      "id": "RE",
+      "name": "Reuniones"
+    },
+    {
+      "id": "GU",
+      "name": "Guion"
+    },
+    {
+      "id": "CA",
+      "name": "Calidad"
+    },
+    {
+      "id": "UD",
+      "name": "Uso diario"
+    }
+  ],
+  "tasks": [
+    {
+      "id": "CA-01",
+      "title": "Latencia baja sólo para subtítulos",
+      "state": "done",
+      "group": "CA",
+      "at": "2026-11-07T10:47:42Z",
+      "by": "claude-code",
+      "desc": "Los subtítulos usan siempre la anticipación rápida de Nemotron (R=3, texto nuevo cada 0,3 s) sin tener que poner HEX_STREAM_ATT_RIGHT, y el dictado con el atajo sigue con el ajuste por defecto, que es el más preciso.\n\nHecho cuando: arrancando el fork sin variables, captions.py mide parciales cada ~0,3 s y el dictado da el mismo texto que antes con un WAV de prueba.",
+      "notes": [
+        {
+          "at": "2026-11-07T19:54:11Z",
+          "by": "claude-code",
+          "text": "Plan: hacer que los streams de /streams (los que usa captions.py) pidan R=3 por defecto, y el dictado con atajo quede con el ajuste de siempre. Luego medir con captions.py y comparar el dictado con un WAV de prueba."
+        },
+        {
+          "at": "2026-11-07T20:04:31Z",
+          "by": "claude-code",
+          "text": "Los subtítulos ya van rápidos sin configurar nada, y el dictado con el atajo no cambia.\n\n- Subtítulos (fork sin variables, WAV de prueba en español): un parcial cada 0,31 s (antes 1,16 s), primeras palabras a 0,90 s, texto exacto salvo \"guion\".\n- Dictado: con el mismo WAV como micrófono, la versión anterior y la nueva dieron el mismo texto y los mismos 15 parciales (dos pasadas cada una).\n- Si el modelo no acepta la anticipación corta (Parakeet Unified), los subtítulos van como el dictado. HEX_STREAM_ATT_RIGHT sigue sirviendo para fijar un valor para todo.\n\nQué comprobar: arrancar el fork sin variables y usar captions.py con el micro; el log dice \"captions stream with a shorter lookahead\". Nada está commiteado."
+        },
+        {
+          "at": "2026-11-07T20:18:10Z",
+          "by": "claude-code",
+          "text": "Commit 1c8a8372 en main."
+        }
+      ]
+    },
+    {
+      "id": "SU-01",
+      "title": "Sesión de subtítulos dentro de MicroPrompt",
+      "state": "done",
+      "group": "SU",
+      "deps": ["CA-01"],
+      "at": "2026-11-07T10:47:42Z",
+      "by": "claude-code",
+      "desc": "El fork graba el micrófono de forma continua y lo transcribe en vivo él mismo, sin Python ni navegador. Es la base de todo lo demás; todavía sin ventana.\n\nHecho cuando: `hex teleprompter start` / `stop` / `status` funcionan, y con un WAV de prueba (HEX_AUDIO_FIXTURE) el texto aparece en `status` y en el log con la misma latencia que captions.py. Detrás de un Lab \"Teleprompter\" apagado por defecto, como pide la guía del repo.",
+      "notes": [
+        {
+          "at": "2026-11-07T20:18:46Z",
+          "by": "claude-code",
+          "text": "Plan: reutilizar dentro del proceso lo que hace captions.py: copiar el audio del micrófono del listener (el mismo sink que usa Annotate) al pipeline de /streams, guardar el texto en vivo y exponerlo con hex teleprompter start/stop/status, detrás del Lab Teleprompter. Primero Windows, que es donde se usa."
+        },
+        {
+          "at": "2026-11-07T20:30:05Z",
+          "by": "claude-code",
+          "text": "MicroPrompt ya hace subtítulos en vivo él solo, sin Python ni navegador: `hex teleprompter start`, `status` (texto hasta ahora y latencia) y `stop` (texto completo).\n\n- Medido con el WAV de prueba como micrófono: parciales cada 0,31 s, primeras palabras a 0,92 s, texto final 0,02 s tras su audio. Igual que captions.py (0,31 / 0,90 / 0,08 s).\n- Cada frase cerrada aparece en process.log (\"teleprompter segment\").\n- Detrás del Lab \"Teleprompter\" (apagado; `hex labs on teleprompter`). Con el Lab apagado, `start` se niega y lo explica. Sólo Linux y Windows.\n- Usa el micrófono que ya tiene abierto Hex; con \"Release microphone while idle\" lo abre mientras dura la sesión.\n\nPara probarlo: `hex labs on teleprompter`, `hex teleprompter start`, habla, `hex teleprompter status`, `hex teleprompter stop`.\n\nA tener en cuenta:\n- Labs tiene una tarjeta nueva, así que las imágenes de referencia (goldens) de Labs en Linux/Windows quedan desactualizadas: sólo se regeneran en Linux.\n- Si captions.py y el teleprompter corren a la vez, uno de los dos pierde los parciales.\n- No está commiteado."
+        }
+      ]
+    },
+    {
+      "id": "SU-02",
+      "title": "Ventana de subtítulos",
+      "state": "done",
+      "group": "SU",
+      "deps": ["SU-01"],
+      "at": "2026-11-07T10:47:42Z",
+      "by": "claude-code",
+      "desc": "Una ventana normal de MicroPrompt que muestra sólo texto: toda la sesión, subiendo según hablas, con scroll para releer, palabras provisionales atenuadas. Un botón empieza y para la sesión.\n\nHecho cuando: abres la ventana, pulsas el botón, hablas y lo ves como en la página web actual; el aspecto se comprueba con capturas en claro y oscuro.",
+      "notes": [
+        {
+          "at": "2026-11-07T20:32:31Z",
+          "by": "claude-code",
+          "text": "Plan: explorar cómo dibuja Rune la ventana y elegir entre un panel en la ventana de Hex o una ventana propia; mostrar el texto de la sesión (estable y provisional atenuado) con scroll y un botón Empezar/Parar; comprobar con capturas --snap en claro y oscuro."
+        },
+        {
+          "at": "2026-11-07T20:50:15Z",
+          "by": "claude-code",
+          "text": "Los subtítulos ya se ven en la ventana de MicroPrompt: con el Lab Teleprompter activado aparece \"Teleprompter\" en la barra lateral, con un botón Empezar sesión / Parar sesión.\n\n- Muestra toda la sesión, una frase por párrafo y en letra grande. Las palabras provisionales salen atenuadas.\n- El texto sigue a la última línea mientras estás abajo; si subes con el scroll, puedes releer.\n- Al parar, el texto se queda hasta la siguiente sesión.\n\nProbado en la app real en Windows: con el WAV como micrófono pulsé el botón (vía UI Automation), el texto fue apareciendo y Parar cerró la sesión con las 5 frases. La latencia es la misma que en SU-01 (parciales cada 0,31 s). Capturas de las escenas en claro y oscuro (escenas `teleprompter` y `teleprompter-idle`).\n\nDecisión para ti: es un panel dentro de la ventana de Hex, no una ventana aparte. Una ventana propia en Rune cuesta bastante más; ¿te vale así?\n\nSin probar: el scroll con una sesión muy larga (usa la misma pieza que las reuniones). No está commiteado."
+        }
+      ]
+    },
+    {
+      "id": "SU-03",
+      "title": "Atajo de teclado para empezar y parar",
+      "state": "done",
+      "group": "SU",
+      "deps": ["SU-01"],
+      "at": "2026-11-07T10:47:42Z",
+      "by": "claude-code",
+      "desc": "Una tecla global empieza y para la sesión de subtítulos, configurable en Ajustes, que no choca con el atajo de dictado.\n\nHecho cuando: con la ventana cerrada o en segundo plano, la tecla empieza y para la sesión.",
+      "notes": [
+        {
+          "at": "2026-11-07T21:19:05Z",
+          "by": "claude-code",
+          "text": "Plan: añadir un atajo propio (teleprompter_hotkey, sin asignar por defecto) siguiendo el de Paste Last: ajuste, clave en hex settings, fila con grabador en Ajustes mientras el Lab está activo, comprobación de choques con los demás atajos, y en el hook de Windows (y Linux) que su pulsación arranque o pare la sesión."
+        },
+        {
+          "at": "2026-11-07T21:27:05Z",
+          "by": "claude-code",
+          "text": "Ya hay una tecla global para empezar y parar la sesión, que funciona con la ventana cerrada.\n\n- Se asigna en el panel Teleprompter (una fila \"Empezar y parar la sesión\" con el grabador de atajos, visible mientras no hay sesión), o con `hex settings set labs.teleprompter_hotkey control+option+t`. Sin asignar por defecto.\n- No puede compartir tecla con los atajos de Hex: probé a asignarle Ctrl+Space (tu dictado) y lo rechaza.\n- Probado en Windows con el WAV, en una copia aparte: con la ventana sin abrir, Ctrl+Alt+T empezó la sesión (texto a los 0,92 s, parciales cada 0,30 s), otra pulsación la paró y quedó en el Historial.\n- Nuevo `hex teleprompter toggle`: en Linux es la forma de tener tecla (asignarlo en el escritorio), y sirve para Stream Deck y similares.\n\nCómo va por dentro: en Windows es una tecla del sistema (RegisterHotKey) en un hilo propio, no otra regla en el hook de teclado de Hex, así que no toca el dictado. Si otra app ya usa esa combinación, el panel dice que no está disponible.\n\nSin probar: grabar el atajo desde la ventana (el grabador es el mismo que el de Hex, pero no lo pulsé). No está commiteado."
+        }
+      ]
+    },
+    {
+      "id": "SU-04",
+      "title": "Sesiones en el historial",
+      "state": "done",
+      "group": "SU",
+      "deps": ["SU-01"],
+      "at": "2026-11-07T10:47:42Z",
+      "by": "claude-code",
+      "desc": "Cada sesión terminada se guarda en el historial de la app con su fecha, se puede buscar, y se puede exportar a .txt y .srt.\n\nHecho cuando: tras una sesión aparece en Historial, la búsqueda la encuentra y el .srt exportado tiene tiempos correctos.",
+      "notes": [
+        {
+          "at": "2026-11-07T21:03:25Z",
+          "by": "claude-code",
+          "text": "Plan: al parar una sesión, guardarla en el historial de Hex (como un tipo de entrada nuevo, con su texto y los tiempos de cada frase); que la búsqueda del Historial la encuentre; y añadir exportar a .txt y .srt desde la entrada."
+        },
+        {
+          "at": "2026-11-07T21:14:16Z",
+          "by": "claude-code",
+          "text": "Las sesiones del teleprompter ya quedan en el Historial: al parar, aparece una entrada \"Teleprompter\" con su fecha, la búsqueda la encuentra y se puede guardar como .txt o .srt.\n\n- Probado de punta a punta con el WAV, en una copia aparte con su propia carpeta de datos: sesión de 25 s → entrada en Historial → `hex history --search latencia` la encuentra → en la ventana, \"Guardar como .srt\" y \".txt\" (pulsados vía UI Automation) escriben los ficheros en Documentos\\MicroPrompt y los muestran en el Explorador.\n- El .srt sale con 5 subtítulos numerados y tiempos 0:00–3,58 / 3,58–8,48 / 8,48–13,56 / 13,56–18,34 / 18,34–22,72 s, uno por frase.\n- Cada subtítulo dura hasta que empieza el siguiente: incluye la pausa que lo sigue. Si prefieres que acabe al terminar de hablar, es otra tarea (habría que guardar dónde termina la voz).\n- Respeta la retención del Historial (con el Historial apagado, no se guarda). Una sesión guarda hasta 128 KiB de texto, unas dos horas; Paste Last nunca la pega.\n- En el detalle, en vez de \"Latencia\" sale \"Duración\".\n\nQué revisar: escena `history-teleprompter` (captura en claro y oscuro). No está commiteado."
+        }
+      ]
+    },
+    {
+      "id": "SU-05",
+      "title": "Elegir español o inglés al empezar",
+      "state": "todo",
+      "group": "SU",
+      "deps": ["SU-02"],
+      "at": "2026-11-07T10:47:42Z",
+      "by": "claude-code",
+      "desc": "En la ventana eliges el idioma de la sesión (español o inglés) antes de empezar.\n\nOjo: hoy los streams usan el idioma que tiene el dictado; cambiarlo puede recargar el modelo (unos segundos). Hay que ver si se puede cambiar sólo para la sesión.\n\nHecho cuando: una sesión en inglés y otra en español transcriben bien sin tocar Ajustes."
+    },
+    {
+      "id": "CA-02",
+      "title": "Frases mejor cortadas y con punto",
+      "state": "doing",
+      "group": "CA",
+      "deps": ["SU-01"],
+      "at": "2026-11-07T10:47:42Z",
+      "by": "claude-code",
+      "desc": "En las pruebas con micrófono, una pausa a media frase la partió en dos (\"Este modelo\" / \"Podría ser mejor\") y a varias frases les faltó el punto final; también salió una frase fantasma \"¿\" en un silencio. Ajustar el corte en pausas para subtítulos (Fase 4.3 del plan) y filtrar frases vacías.\n\nHecho cuando: con una grabación tuya de referencia hay menos frases partidas y ninguna fantasma, sin perder palabras tras las pausas.",
+      "notes": [
+        {
+          "at": "2026-11-08T13:27:39Z",
+          "by": "claude-code-ca02",
+          "text": "Plan: reproducir con una grabación de referencia (pausa a media frase + silencio final), encontrar por qué se corta la frase y sale '¿', ajustar el corte solo para subtítulos y filtrar frases vacías; PR con antes/después."
+        }
+      ]
+    },
+    {
+      "id": "CA-03",
+      "title": "Medir con voz real en español e inglés",
+      "state": "todo",
+      "group": "CA",
+      "deps": ["CA-01"],
+      "at": "2026-11-07T10:47:42Z",
+      "by": "claude-code",
+      "desc": "Comprobar con grabaciones tuyas (no voz sintética), de varios minutos y en los dos idiomas, que el ajuste rápido no empeora la precisión, y comparar inglés con Parakeet Unified English.\n\nHecho cuando: hay una tabla de errores y latencia por idioma y ajuste en el README del prototipo, y una recomendación clara de modelo por idioma."
+    },
+    {
+      "id": "RE-01",
+      "title": "Audio de Windows como fuente",
+      "state": "todo",
+      "group": "RE",
+      "deps": ["SU-02"],
+      "at": "2026-11-07T10:47:42Z",
+      "by": "claude-code",
+      "desc": "Al empezar una sesión eliges qué subtitular: micrófono, audio del sistema (lo que suena por los altavoces: llamadas, vídeos) o ambos. Reutiliza la captura WASAPI que Hex ya usa en reuniones.\n\nHecho cuando: un vídeo de YouTube se subtitula con \"audio del sistema\" y la elección se recuerda para la próxima vez."
+    },
+    {
+      "id": "RE-02",
+      "title": "Yo / Los demás",
+      "state": "todo",
+      "group": "RE",
+      "deps": ["RE-01"],
+      "at": "2026-11-07T10:47:42Z",
+      "by": "claude-code",
+      "desc": "Con micrófono y audio del sistema a la vez, cada frase sale etiquetada \"Yo\" o \"Los demás\" según de dónde venga, y lo que suena por tus altavoces y se cuela en el micrófono no sale repetido como tuyo (Hex ya tiene esa lógica de eco para reuniones).\n\nRiesgo: hoy sólo puede haber un stream a la vez; harán falta dos (uno por fuente) sobre el mismo modelo.\n\nHecho cuando: en una llamada real con altavoces, tus frases salen como \"Yo\", las del otro como \"Los demás\", sin duplicados."
+    },
+    {
+      "id": "GU-01",
+      "title": "Abrir un guion",
+      "state": "todo",
+      "group": "GU",
+      "deps": ["SU-02"],
+      "at": "2026-11-07T10:47:42Z",
+      "by": "claude-code",
+      "desc": "En la ventana abres un fichero .txt o .md y se muestra como guion, en letra grande, listo para leer.\n\nHecho cuando: abres un guion de varias páginas, se ve entero con scroll y el formato de Markdown básico no estorba (títulos y listas se leen bien)."
+    },
+    {
+      "id": "GU-02",
+      "title": "El guion sigue tu lectura",
+      "state": "todo",
+      "group": "GU",
+      "deps": ["GU-01"],
+      "at": "2026-11-07T10:47:42Z",
+      "by": "claude-code",
+      "desc": "Mientras lees en voz alta, MicroPrompt reconoce por dónde vas, marca lo ya leído y desplaza el guion solo para que la línea actual quede siempre a la vista.\n\nHecho cuando: lees un guion de 2-3 minutos a tu ritmo, con algún error de lectura, y el guion no se adelanta ni se pierde."
+    },
+    {
+      "id": "GU-03",
+      "title": "Improvisar y volver al guion",
+      "state": "todo",
+      "group": "GU",
+      "deps": ["GU-02"],
+      "at": "2026-11-07T10:47:42Z",
+      "by": "claude-code",
+      "desc": "Si te sales del texto, el guion se queda donde ibas y debajo aparecen tus palabras como subtítulos; cuando vuelves a leer, retoma el guion desde donde sigas.\n\nHecho cuando: improvisas 30 s en mitad de un guion y al volver a leer el seguimiento continúa sin saltos."
+    },
+    {
+      "id": "UD-01",
+      "title": "MicroPrompt sustituye a Hex",
+      "state": "done",
+      "group": "UD",
+      "deps": ["SU-02", "SU-03", "SU-04"],
+      "at": "2026-11-07T10:47:42Z",
+      "by": "claude-code",
+      "desc": "El fork pasa a ser tu único Hex: compilación optimizada (release), arranca con Windows, usa tus ajustes, historial y modelos actuales, y no se actualiza solo. Después puedes desinstalar el Hex oficial.\n\nHecho cuando: tras reiniciar el PC arranca solo, el dictado con Ctrl+Space y los subtítulos funcionan, y tu historial de dictados sigue ahí.",
+      "notes": [
+        {
+          "at": "2026-11-07T21:51:03Z",
+          "by": "claude-code",
+          "text": "Plan: compilar en release como build local (sin actualizaciones), instalar el exe en una carpeta fija, que use la carpeta de datos del Hex oficial (%APPDATA%\\hex: ajustes, historial, modelos), y que arranque con Windows. Desinstalar el oficial lo decides tú."
+        },
+        {
+          "at": "2026-11-07T21:58:17Z",
+          "by": "claude-code",
+          "text": "MicroPrompt ya es tu Hex de diario: está instalado, arranca con Windows y usa tus ajustes, historial y modelos de siempre. Falta que tú reinicies y lo compruebes.\n\n- Instalado en %LOCALAPPDATA%\\Programs\\MicroPrompt\\hex.exe (build release, local: nunca se actualiza solo; el log lo confirma). Hay un acceso \"MicroPrompt\" en el menú Inicio.\n- La entrada \"Hex\" del arranque de Windows apunta ya al fork (antes al oficial).\n- Usa %APPDATA%\\hex como el oficial: tus 32 dictados siguen en el Historial, el modelo es Nemotron (es), el listener está activo y el Lab Teleprompter, encendido. Una sesión rápida del teleprompter arrancó y paró bien.\n- Para repetirlo tras cambios: compilar en release con HEX_LOCAL_BUILD=1 y ejecutar scripts\\install-microprompt.ps1 (sin commitear).\n\nQué comprobar tú:\n1. Reinicia el PC: debe arrancar solo (icono en la bandeja).\n2. Dicta con Ctrl+Space en cualquier app.\n3. Abre la ventana → Teleprompter → Empezar sesión.\n4. Después, si quieres, desinstala el Hex oficial (Configuración › Aplicaciones): su desinstalador conserva tus datos y no toca la entrada de inicio del fork.\n\nOjo: si vuelves al Hex oficial tras guardar sesiones del teleprompter, no leerá el historial (lo aparta como copia y empieza vacío)."
+        }
+      ]
+    }
+  ]
+}

@@ -297,6 +297,18 @@ Windows con el WAV: Ctrl+Alt+T sin abrir la ventana empieza la sesión, otra
 pulsación la para y se guarda en el Historial; Ctrl+Space (el dictado) se
 rechaza.
 
+**Hecho (UD-01)**: el fork es el Hex de uso diario.
+`scripts/install-microprompt.ps1` copia el build release local
+(`HEX_LOCAL_BUILD=1 cargo build --release --bin hex`, que nunca se actualiza)
+a `%LOCALAPPDATA%\Programs\MicroPrompt\hex.exe`. Crea "MicroPrompt" en el
+menú Inicio y apunta la entrada "Hex" del arranque de Windows al fork.
+Comparte los datos del Hex oficial (`%APPDATA%\hex`: ajustes e Historial;
+`%LOCALAPPDATA%\hex`: modelos y logs). El desinstalador del oficial borra sólo
+`versions`, `updates` y `bin`, y la entrada de inicio sólo si apunta a
+`versions\`, así que no toca nada de esto. Ojo: una vez guardada una sesión
+del teleprompter, el Hex oficial ya no lee `history.json` (tipo desconocido):
+lo aparta como copia y empieza vacío.
+
 
 Siguiendo las convenciones del repo (`AGENTS.md`, `docs/features/labs.md`):
 
