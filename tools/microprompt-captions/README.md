@@ -128,6 +128,56 @@ libre): 13 frases. La sensación cambió a "bastante rápido", "es una mejora",
 "de espacio", y bien al repetirlo. A algunas frases les faltó el punto final,
 como ya pasaba con el valor por defecto.
 
+### Frases partidas y fantasmas (CA-02)
+
+Causa: `/streams` cerraba la ventana en cada pausa de 600 ms (300 ms pasados
+8 s) y cada ventana se transcribe sola. El modelo no sabe si la frase sigue,
+así que una pausa a media frase la parte en dos líneas, con un punto de más o
+sin el final. Y una ventana de respiración o ruido podía volver como "¿".
+
+Ahora (en `src/transcription/stream.rs`, sólo `/streams` y el teleprompter;
+el dictado y las reuniones no cambian): si en la pausa el texto no acaba en
+`.`, `?`, `!` o `…`, el corte espera a las palabras siguientes. Nemotron
+puntúa en cuanto las oye: si pone el punto justo en la pausa, la ventana se
+corta ahí; si siguen palabras sin punto, la frase sigue en la misma ventana.
+Una pausa de 2,5 s (lo que el dictado deja dentro de un stream, para no
+perder palabras) cierra la frase con punto. Una ventana sin letras ni cifras
+no da línea.
+
+Medido con un WAV de referencia (Helena, 49 s, 8 frases, 5 pausas a media
+frase de 0,8 a 1,5 s dichas de un tirón con SSML, huecos entre frases de 1,2
+a 1,5 s y 6 s de silencio con una respiración), con `HEX_AUDIO_FIXTURE` y
+`hex teleprompter start|stop`, Nemotron con R=3 en la RTX 5070 Ti:
+
+| | Antes (`main`) | Después |
+| --- | ---: | ---: |
+| Líneas | 12 | 9 |
+| Frases partidas en dos | 4 de 5 | 2 de 5 |
+| Líneas sin puntuación final | 1 | 0 |
+| Dos frases unidas en una línea | 0 | 1 |
+| Palabras perdidas tras pausas | 0 | 0 |
+| Frases fantasma | 0 | 0 |
+| Parciales: cada / primeras palabras | 0,30 s / 1,62 s | 0,30 s / 1,62 s |
+| Línea cerrada tras su audio (mediana) | 0,05 s | 1,1 s |
+
+```text
+Antes:   Esto está capturando el micrófono.
+         o está capturando el audio de Windows
+         El tamaño del texto es correcto.
+         Pero quiero ver todo el texto posible en la pantalla.
+Después: Esto está capturando el micrófono o está capturando el audio de Windows.
+         El tamaño del texto es correcto, pero quiero ver todo el texto posible en la pantalla.
+```
+
+Las dos que siguen partidas ("…el texto." / "Cuando hablo…", "…de
+espacio." / "Para ver…") las parte el propio modelo: oyendo lo que sigue,
+puso el punto en la pausa. A cambio, "…tiempo seguido" y "Vamos a hacer la
+prueba" (1,5 s de hueco) salieron en una línea, unidas con coma. La línea se
+cierra más tarde porque espera a las palabras siguientes, pero el texto se
+ve igual de rápido (parciales). Los ruidos sintéticos (respiraciones, "mmm",
+clics) no reproducen el "¿" de la prueba real; lo cubre un test
+(`a_window_without_words_sends_no_segment`).
+
 Ojo: si la GPU falla una vez (Hex guardó un "out of memory" con Cohere en la
 RTX), Hex la apunta en `%APPDATA%\hex\gpu-failures.json` y en modo Auto pasa
 a la CPU, sin parciales. `hex settings set transcription_device gpu` (o

@@ -97,6 +97,8 @@ pub struct PauseSegmenter {
     piece_start: usize,
     silent_frames: usize,
     heard_speech: bool,
+    /// Frames since the last speech frame, kept across cuts.
+    quiet_frames: usize,
 }
 
 impl PauseSegmenter {
@@ -116,14 +118,21 @@ impl PauseSegmenter {
         cut
     }
 
+    /// How long it has been quiet since the last speech, cuts or not.
+    pub(crate) fn pause(&self) -> Duration {
+        Duration::from_millis((self.quiet_frames * FRAME_SAMPLES * 1_000 / SAMPLE_RATE) as u64)
+    }
+
     fn complete_frame(&mut self) -> Option<usize> {
         self.position += FRAME_SAMPLES;
         if self.speech.is_speech(&self.frame) {
             self.silent_frames = 0;
+            self.quiet_frames = 0;
             self.heard_speech = true;
             return None;
         }
         self.silent_frames += 1;
+        self.quiet_frames += 1;
         let piece = self.position - self.piece_start;
         let pause = if piece >= samples(LONG_PIECE) {
             LONG_PIECE_PAUSE

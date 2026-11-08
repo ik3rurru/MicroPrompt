@@ -4,7 +4,8 @@
 //! reports partial text, one final segment per window, and the final text.
 //!
 //! Dictation always comes first. Audio is cut into windows at pauses (at most
-//! [`MAX_WINDOW_SAMPLES`]). Each window streams through a
+//! [`MAX_WINDOW_SAMPLES`]); a pause inside a sentence waits for the words
+//! after it, so a sentence stays in one window. Each window streams through a
 //! [`YieldingStream`], which any dictation request closes, and the stream
 //! feeds nothing while dictation is busy (from the shortcut press through
 //! inference): its audio waits in a bounded backlog and catches up after. A
@@ -38,6 +39,9 @@ pub(crate) const MAX_WINDOW_SAMPLES: usize = 25 * SAMPLE_RATE;
 const MAX_IN_FLIGHT_SAMPLES: usize = SAMPLE_RATE * 2 / 5;
 /// The smallest feed, so the engine is not sent a command per frame.
 const FEED_SAMPLES: usize = SAMPLE_RATE / 10;
+/// The longest pause a window keeps inside a sentence, as dictation's
+/// streams do: past it, the model can drop the words after the pause.
+const MAX_PAUSE: Duration = Duration::from_millis(2_500);
 /// How long a window's stream may take to finalize once asked.
 const STREAM_FINISH_DEADLINE: Duration = Duration::from_secs(3);
 const POLL: Duration = Duration::from_millis(50);
@@ -635,8 +639,22 @@ struct Worker<E> {
     engine: E,
     window: Window,
     segmenter: PauseSegmenter,
+    /// A pause cut put off while the text before it ends mid-sentence.
+    held: Option<Held>,
     /// The latest partial's sequence number.
     partial_seq: u64,
+}
+
+/// A pause cut waiting for the words after it: once the model hears what
+/// follows, it either closes the sentence at the pause (the window is cut
+/// there) or goes on with more words (the sentence stays in one window).
+struct Held {
+    /// Where the cut falls, in samples into the window.
+    at: usize,
+    /// The window's text when the pause cut.
+    text: String,
+    /// Words in the text when speech came back.
+    words: Option<usize>,
 }
 
 impl<E: Engine> Worker<E> {
@@ -646,6 +664,7 @@ impl<E: Engine> Worker<E> {
             engine,
             window: Window::at(0),
             segmenter: PauseSegmenter::default(),
+            held: None,
             partial_seq: 0,
         }
     }
@@ -696,7 +715,7 @@ impl<E: Engine> Worker<E> {
                 return end;
             }
             if finishing && self.shared.lock().pending.is_empty() {
-                if let Err(end) = self.close_window() {
+                if let Err(end) = self.close_window(None) {
                     return end;
                 }
                 let state = self.shared.lock();
@@ -714,6 +733,9 @@ impl<E: Engine> Worker<E> {
             }
             self.feed(finishing);
             self.publish_partial();
+            if let Err(end) = self.settle_held() {
+                return end;
+            }
             if audio.is_empty() {
                 self.wait(false);
             }
@@ -731,14 +753,91 @@ impl<E: Engine> Worker<E> {
     }
 
     /// Adds audio to windows frame by frame, closing a window at each pause
-    /// cut or when it is full.
+    /// cut or when it is full. A cut while the text ends mid-sentence is
+    /// [`Held`]; a held cut whose pause reaches [`MAX_PAUSE`] closes the
+    /// window and its sentence.
     fn take(&mut self, audio: &[f32]) -> Result<(), End> {
         for frame in audio.chunks(FRAME_SAMPLES) {
             self.window.audio.extend_from_slice(frame);
-            let cut = self.segmenter.push(frame).is_some();
-            if cut || self.window.audio.len() >= MAX_WINDOW_SAMPLES {
-                self.close_window()?;
+            let cut = self.segmenter.push(frame);
+            let pause = self.segmenter.pause();
+            let text = (cut.is_some() || self.held.is_some())
+                .then(|| self.partial_text())
+                .flatten();
+            let mut said = None;
+            let close = match &mut self.held {
+                Some(held) => {
+                    if pause.is_zero() && held.words.is_none() {
+                        held.words = Some(text.as_deref().map_or(0, word_count));
+                    }
+                    // The model punctuates only once it hears what follows.
+                    said = text
+                        .filter(|text| pause >= MAX_PAUSE && !text.is_empty())
+                        .map(|text| {
+                            if text.ends_with(SENTENCE_END) {
+                                text
+                            } else {
+                                text + "."
+                            }
+                        });
+                    pause >= MAX_PAUSE
+                }
+                None => match (cut, text) {
+                    (Some(cut), Some(text))
+                        if !text.is_empty() && !text.ends_with(SENTENCE_END) =>
+                    {
+                        self.held = Some(Held {
+                            at: cut.saturating_sub(self.window.start),
+                            text,
+                            words: None,
+                        });
+                        false
+                    }
+                    (cut, _) => cut.is_some(),
+                },
+            };
+            if close || self.window.audio.len() >= MAX_WINDOW_SAMPLES {
+                self.close_window(said)?;
             }
+        }
+        Ok(())
+    }
+
+    /// The window's partial text, while its live stream is open.
+    fn partial_text(&self) -> Option<String> {
+        let live = self.window.live.as_ref().filter(|live| live.open())?;
+        let partial = live.partial()?;
+        Some(
+            format!("{}{}", partial.stable, partial.tentative)
+                .trim()
+                .to_string(),
+        )
+    }
+
+    /// Settles a held cut from the latest partial: a sentence end where
+    /// the pause was cuts the window there, with the text up to it; a word
+    /// after the pause without one keeps the sentence going.
+    fn settle_held(&mut self) -> Result<(), End> {
+        let Some(held) = self.held.take() else {
+            return Ok(());
+        };
+        let Some(text) = self.partial_text() else {
+            self.held = Some(held);
+            return Ok(());
+        };
+        let end = text
+            .strip_prefix(held.text.as_str())
+            .and_then(|after| after.chars().next())
+            .filter(|next| SENTENCE_END.contains(next));
+        if let Some(end) = end {
+            let rest = self
+                .window
+                .audio
+                .split_off(held.at.min(self.window.audio.len()));
+            self.close_window(Some(format!("{}{end}", held.text)))?;
+            self.window.audio = rest;
+        } else if !held.words.is_some_and(|words| word_count(&text) > words) {
+            self.held = Some(held);
         }
         Ok(())
     }
@@ -819,11 +918,13 @@ impl<E: Engine> Worker<E> {
         live.finish().ok()
     }
 
-    /// Finishes the window: through its live stream when that is still open,
-    /// otherwise offline once dictation is idle.
-    fn close_window(&mut self) -> Result<(), End> {
+    /// Finishes the window: with `said` when its text is already known,
+    /// else through its live stream when that is still open, otherwise
+    /// offline once dictation is idle.
+    fn close_window(&mut self, said: Option<String>) -> Result<(), End> {
         let next = Window::at(self.window.start + self.window.audio.len());
         let mut window = std::mem::replace(&mut self.window, next);
+        self.held = None;
         if window.audio.is_empty() {
             return Ok(());
         }
@@ -833,7 +934,7 @@ impl<E: Engine> Worker<E> {
                 "Hex's dictation model changed during the stream",
             ));
         }
-        let text = match self.stream_window(&mut window) {
+        let text = match said.or_else(|| self.stream_window(&mut window)) {
             Some(text) => text,
             None => {
                 let shared = self.shared.clone();
@@ -856,7 +957,8 @@ impl<E: Engine> Worker<E> {
         let mut state = self.shared.lock();
         state.backlog = state.backlog.saturating_sub(window.audio.len());
         state.partial = None;
-        if !text.is_empty() {
+        // A window of breath or noise can come back as a lone "¿" or ".".
+        if text.chars().any(char::is_alphanumeric) {
             let segment = Segment {
                 segment: state.segments.len(),
                 start_ms: samples_ms(window.start),
@@ -888,6 +990,12 @@ fn publish_partial(shared: &Shared, seq: &mut u64, live: &dyn Live) {
     state.partial = Some((*seq, segment, partial));
     drop(state);
     shared.changed.notify_all();
+}
+
+const SENTENCE_END: [char; 4] = ['.', '?', '!', '…'];
+
+fn word_count(text: &str) -> usize {
+    text.split_whitespace().count()
 }
 
 fn failed(code: &'static str, message: &str) -> End {
