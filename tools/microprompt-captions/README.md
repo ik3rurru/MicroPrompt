@@ -174,9 +174,10 @@ espacio." / "Para ver…") las parte el propio modelo: oyendo lo que sigue,
 puso el punto en la pausa. A cambio, "…tiempo seguido" y "Vamos a hacer la
 prueba" (1,5 s de hueco) salieron en una línea, unidas con coma. La línea se
 cierra más tarde porque espera a las palabras siguientes, pero el texto se
-ve igual de rápido (parciales). Los ruidos sintéticos (respiraciones, "mmm",
-clics) no reproducen el "¿" de la prueba real; lo cubre un test
-(`a_window_without_words_sends_no_segment`).
+ve igual de rápido (parciales); al cortar, las primeras palabras de la línea
+siguiente desaparecen un instante mientras se vuelven a transcribir. Los
+ruidos sintéticos (respiraciones, "mmm", clics) no reproducen el "¿" de la
+prueba real; lo cubre un test (`a_window_without_words_sends_no_segment`).
 
 Ojo: si la GPU falla una vez (Hex guardó un "out of memory" con Cohere en la
 RTX), Hex la apunta en `%APPDATA%\hex\gpu-failures.json` y en modo Auto pasa

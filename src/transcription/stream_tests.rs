@@ -418,16 +418,21 @@ impl Stream {
     }
 }
 
-/// Pushes `audio` and waits until the latest live stream has been fed
-/// `fed` samples in all.
-fn push_fed(stream: &Stream, engine: &FakeEngine, audio: &[f32], fed: usize) {
-    stream.push(audio).unwrap();
-    eventually(|| {
-        engine
-            .lives()
-            .last()
-            .is_some_and(|live| live.fed.load(Ordering::SeqCst) == fed)
-    });
+/// Pushes `audio[from..to]` as a live client does, 100 ms at a time, each
+/// fed to a live stream before the next.
+fn push_live(stream: &Stream, engine: &FakeEngine, audio: &[f32], from: usize, to: usize) {
+    for start in (from..to).step_by(FEED_SAMPLES) {
+        let end = (start + FEED_SAMPLES).min(to);
+        stream.push(&audio[start..end]).unwrap();
+        eventually(|| {
+            let lives = engine.lives();
+            let fed: usize = lives
+                .iter()
+                .map(|live| live.fed.load(Ordering::SeqCst))
+                .sum();
+            fed >= end - from
+        });
+    }
 }
 
 /// Sets what the live streams' partial says and waits until the worker
@@ -454,10 +459,8 @@ fn pause_inside_a_sentence(after: &str) -> End {
     let streams = Streams::default();
     let stream = create(&streams, &engine);
     *engine.0.partial.lock().unwrap() = Some("Este modelo".into());
-    push_fed(&stream, &engine, &audio[..at(4_000)], at(4_000));
     // The pause cuts at 4.3 s, but "Este modelo" doesn't end a sentence.
-    push_fed(&stream, &engine, &audio[at(4_000)..at(5_000)], at(5_000));
-    push_fed(&stream, &engine, &audio[at(5_000)..at(5_200)], at(5_200));
+    push_live(&stream, &engine, &audio, 0, at(5_200));
     say(&stream, &engine, after);
     stream.push(&audio[at(5_200)..]).unwrap();
     finish(&stream)
@@ -493,4 +496,28 @@ fn a_window_without_words_sends_no_segment() {
     let stream = create(&streams, &engine);
     stream.push(&[0.0; 8_000]).unwrap();
     assert!(texts(&finish(&stream)).is_empty());
+}
+
+#[test]
+fn a_held_pause_of_two_and_a_half_seconds_ends_the_sentence() {
+    use crate::transcription::pause_segmenter::tests::utterance;
+    let audio = utterance(&[(4_000, 3_000)], -70.0);
+    let engine = FakeEngine::default();
+    *engine.0.partial.lock().unwrap() = Some("Este modelo".into());
+    let streams = Streams::default();
+    let stream = create(&streams, &engine);
+    push_live(&stream, &engine, &audio, 0, audio.len());
+    let end = finish(&stream);
+    let End::Final { segments, .. } = &end else {
+        unreachable!()
+    };
+    // Closed by its live stream, with a full stop, 2.5 s into the pause.
+    assert!(
+        segments[0].text.starts_with("live ") && segments[0].text.ends_with('.'),
+        "{segments:?}"
+    );
+    assert!(
+        (6_400..=6_600).contains(&segments[0].end_ms),
+        "{segments:?}"
+    );
 }

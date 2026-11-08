@@ -120,7 +120,9 @@ impl PauseSegmenter {
 
     /// How long it has been quiet since the last speech, cuts or not.
     pub(crate) fn pause(&self) -> Duration {
-        Duration::from_millis((self.quiet_frames * FRAME_SAMPLES * 1_000 / SAMPLE_RATE) as u64)
+        Duration::from_millis(
+            self.quiet_frames as u64 * (FRAME_SAMPLES * 1_000 / SAMPLE_RATE) as u64,
+        )
     }
 
     fn complete_frame(&mut self) -> Option<usize> {

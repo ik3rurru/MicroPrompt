@@ -38,7 +38,7 @@ Feature             Pane  Toggle (settings.json, hex settings)   On: what it doe
 │                                        starts and stops it with the window closed; Linux binds `hex teleprompter toggle`
 │                                        a line ends where the model ends a sentence: a pause mid-sentence waits for the next words
 │                                        (up to 2.5 s), and wordless lines ("¿") are dropped (src/transcription/stream.rs, CA-02;
-│                                        a_pause_inside_a_sentence_keeps_it_in_one_window and two more in stream_tests.rs)
+│                                        a_pause_inside_a_sentence_keeps_it_in_one_window and three more in stream_tests.rs)
 ├── Live chapters   no    labs.live_chapters           (macOS)   chapters a meeting while it records, boundary pass after Stop
 ├── Vocabulary biasing no labs.vocabulary_biasing                Parakeet transcription biased toward the vocabulary (#452/#457)
 ├── Switch model with keyboard language  no  keyboard_model_switching.enabled  (macOS, Windows, X11)

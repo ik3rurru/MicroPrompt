@@ -645,16 +645,14 @@ struct Worker<E> {
     partial_seq: u64,
 }
 
-/// A pause cut waiting for the words after it: once the model hears what
-/// follows, it either closes the sentence at the pause (the window is cut
-/// there) or goes on with more words (the sentence stays in one window).
+/// A pause cut waiting for the words after it: once the model commits a
+/// word past the pause, it has either ended the sentence at the pause (the
+/// window is cut there) or not (the sentence stays in one window).
 struct Held {
     /// Where the cut falls, in samples into the window.
     at: usize,
-    /// The window's text when the pause cut.
-    text: String,
-    /// Words in the text when speech came back.
-    words: Option<usize>,
+    /// Words the model had heard when the pause cut.
+    words: usize,
 }
 
 impl<E: Engine> Worker<E> {
@@ -715,7 +713,7 @@ impl<E: Engine> Worker<E> {
                 return end;
             }
             if finishing && self.shared.lock().pending.is_empty() {
-                if let Err(end) = self.close_window(None) {
+                if let Err(end) = self.close_window(None, false) {
                     return end;
                 }
                 let state = self.shared.lock();
@@ -760,83 +758,68 @@ impl<E: Engine> Worker<E> {
         for frame in audio.chunks(FRAME_SAMPLES) {
             self.window.audio.extend_from_slice(frame);
             let cut = self.segmenter.push(frame);
-            let pause = self.segmenter.pause();
-            let text = (cut.is_some() || self.held.is_some())
-                .then(|| self.partial_text())
-                .flatten();
-            let mut said = None;
-            let close = match &mut self.held {
-                Some(held) => {
-                    if pause.is_zero() && held.words.is_none() {
-                        held.words = Some(text.as_deref().map_or(0, word_count));
-                    }
-                    // The model punctuates only once it hears what follows.
-                    said = text
-                        .filter(|text| pause >= MAX_PAUSE && !text.is_empty())
-                        .map(|text| {
-                            if text.ends_with(SENTENCE_END) {
-                                text
-                            } else {
-                                text + "."
-                            }
-                        });
-                    pause >= MAX_PAUSE
-                }
-                None => match (cut, text) {
-                    (Some(cut), Some(text))
-                        if !text.is_empty() && !text.ends_with(SENTENCE_END) =>
-                    {
-                        self.held = Some(Held {
-                            at: cut.saturating_sub(self.window.start),
-                            text,
-                            words: None,
-                        });
-                        false
-                    }
-                    (cut, _) => cut.is_some(),
-                },
+            let over = self.held.is_some() && self.segmenter.pause() >= MAX_PAUSE;
+            let close = match cut {
+                _ if self.held.is_some() => over,
+                Some(cut) => !self.hold(cut),
+                None => false,
             };
             if close || self.window.audio.len() >= MAX_WINDOW_SAMPLES {
-                self.close_window(said)?;
+                self.close_window(None, over)?;
             }
         }
         Ok(())
     }
 
-    /// The window's partial text, while its live stream is open.
-    fn partial_text(&self) -> Option<String> {
-        let live = self.window.live.as_ref().filter(|live| live.open())?;
-        let partial = live.partial()?;
-        Some(
-            format!("{}{}", partial.stable, partial.tentative)
-                .trim()
-                .to_string(),
-        )
+    /// Holds a pause cut when the model has heard up to it and its text
+    /// doesn't end a sentence there.
+    fn hold(&mut self, cut: usize) -> bool {
+        let at = cut.saturating_sub(self.window.start);
+        let Some(live) = self.window.live.as_ref().filter(|live| live.open()) else {
+            return false;
+        };
+        let Some(partial) = live.partial() else {
+            return false;
+        };
+        let text = format!("{}{}", partial.stable, partial.tentative);
+        let words = word_count(&text);
+        let heard = self.window.fed.saturating_sub(live.in_flight()) >= at;
+        if !heard || words == 0 || text.trim_end().ends_with(SENTENCE_END) {
+            return false;
+        }
+        self.held = Some(Held { at, words });
+        true
     }
 
-    /// Settles a held cut from the latest partial: a sentence end where
-    /// the pause was cuts the window there, with the text up to it; a word
-    /// after the pause without one keeps the sentence going.
+    /// Settles a held cut once the model commits a word past the pause: a
+    /// sentence end on the word before the pause cuts the window there,
+    /// with the committed words up to it; none keeps the sentence going.
     fn settle_held(&mut self) -> Result<(), End> {
         let Some(held) = self.held.take() else {
             return Ok(());
         };
-        let Some(text) = self.partial_text() else {
-            self.held = Some(held);
-            return Ok(());
-        };
-        let end = text
-            .strip_prefix(held.text.as_str())
-            .and_then(|after| after.chars().next())
-            .filter(|next| SENTENCE_END.contains(next));
-        if let Some(end) = end {
+        let partial = self
+            .window
+            .live
+            .as_ref()
+            .filter(|live| live.open())
+            .and_then(|live| live.partial());
+        let stable = partial
+            .as_ref()
+            .map(|partial| partial.stable.split_whitespace().collect::<Vec<_>>())
+            .unwrap_or_default();
+        let ended = stable
+            .get(held.words - 1)
+            .is_some_and(|word| word.ends_with(SENTENCE_END));
+        if ended {
+            let said = stable[..held.words].join(" ");
             let rest = self
                 .window
                 .audio
                 .split_off(held.at.min(self.window.audio.len()));
-            self.close_window(Some(format!("{}{end}", held.text)))?;
+            self.close_window(Some(said), false)?;
             self.window.audio = rest;
-        } else if !held.words.is_some_and(|words| word_count(&text) > words) {
+        } else if stable.len() <= held.words {
             self.held = Some(held);
         }
         Ok(())
@@ -920,8 +903,9 @@ impl<E: Engine> Worker<E> {
 
     /// Finishes the window: with `said` when its text is already known,
     /// else through its live stream when that is still open, otherwise
-    /// offline once dictation is idle.
-    fn close_window(&mut self, said: Option<String>) -> Result<(), End> {
+    /// offline once dictation is idle. `over`: the speaker paused long
+    /// enough that the sentence is over, so it ends with a full stop.
+    fn close_window(&mut self, said: Option<String>, over: bool) -> Result<(), End> {
         let next = Window::at(self.window.start + self.window.audio.len());
         let mut window = std::mem::replace(&mut self.window, next);
         self.held = None;
@@ -953,12 +937,22 @@ impl<E: Engine> Worker<E> {
                 }
             }
         };
-        let text = text.trim().to_string();
+        let mut text = text.trim().to_string();
+        let words = text.chars().any(char::is_alphanumeric);
+        if over && words && !text.ends_with(SENTENCE_END) {
+            text.truncate(text.trim_end_matches([',', ';', ':']).len());
+            text.push('.');
+        }
         let mut state = self.shared.lock();
         state.backlog = state.backlog.saturating_sub(window.audio.len());
         state.partial = None;
-        // A window of breath or noise can come back as a lone "¿" or ".".
-        if text.chars().any(char::is_alphanumeric) {
+        // A window of breath or noise can come back as a lone "¿" or ".";
+        // it sends no segment, and an empty partial clears what it showed.
+        if !words {
+            self.partial_seq += 1;
+            let segment = state.segments.len();
+            state.partial = Some((self.partial_seq, segment, Partial::default()));
+        } else {
             let segment = Segment {
                 segment: state.segments.len(),
                 start_ms: samples_ms(window.start),
