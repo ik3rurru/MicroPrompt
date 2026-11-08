@@ -9,7 +9,6 @@ use rune::{El, Span, TextStyle, col, rich, row, text};
 use crate::desktop::i18n::tr;
 use crate::rune_ui::controls::{ButtonKind, METRICS, Paint, button, card, pulsing_dot};
 use crate::rune_ui::lists::placeholder;
-use crate::rune_ui::platform::PlatformState;
 use crate::rune_ui::{Tx, Ui, list_detail};
 use crate::teleprompter::View;
 
@@ -23,8 +22,10 @@ pub(in crate::rune_ui) fn shown(ui: &Ui) -> bool {
 }
 
 /// Copies the session in when it changed (the host's poll, every frame;
-/// the session wakes the window on each change). True when it did.
-pub(in crate::rune_ui) fn poll(state: &mut PlatformState) -> bool {
+/// the session wakes the window on each change). True when it did. Only
+/// the Linux and Windows hosts poll it: macOS runs no session.
+#[cfg(any(target_os = "linux", target_os = "windows"))]
+pub(in crate::rune_ui) fn poll(state: &mut crate::rune_ui::platform::PlatformState) -> bool {
     let generation = crate::teleprompter::generation();
     if generation == state.teleprompter.generation {
         return false;
