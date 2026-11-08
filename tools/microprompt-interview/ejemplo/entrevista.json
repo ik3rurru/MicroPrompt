@@ -1,0 +1,31 @@
+{
+  "nota": "Entrevista simulada (ficticia). tipo: prevista = está en el guion con otras palabras; imprevista = no está; no-pregunta = no debe sacar tarjeta. pausa_s = silencio después del turno (lo que tardarías en contestar).",
+  "turnos": [
+    {"tipo": "no-pregunta", "pausa_s": 2.5,
+     "texto": "Hola, buenos días, gracias por venir. Te explico cómo va a ser la entrevista: primero hablamos de ti y luego te cuento el puesto."},
+    {"tipo": "prevista", "esperada": "Háblame de ti", "pausa_s": 8,
+     "texto": "Para empezar, ¿me haces un pequeño resumen de tu trayectoria profesional?"},
+    {"tipo": "no-pregunta", "pausa_s": 2.5,
+     "texto": "Vale, perfecto, muy interesante."},
+    {"tipo": "prevista", "esperada": "¿Por qué quieres trabajar en Rutalia?", "pausa_s": 8,
+     "texto": "¿Y qué es lo que te ha llamado la atención de nuestra empresa?"},
+    {"tipo": "imprevista", "pausa_s": 8,
+     "texto": "Cuéntame una situación en la que tuviste un conflicto con un compañero y cómo lo resolviste."},
+    {"tipo": "prevista", "esperada": "Cuéntame un proyecto del que estés orgulloso", "pausa_s": 8,
+     "texto": "Háblame de algún proyecto que hayas liderado y que saliera especialmente bien."},
+    {"tipo": "no-pregunta", "pausa_s": 2.5,
+     "texto": "Genial. Te cuento un poco del puesto: el equipo son seis personas, trabajamos con Python y Kubernetes, y ahora mismo estamos migrando el sistema de rutas a eventos."},
+    {"tipo": "imprevista", "pausa_s": 8,
+     "texto": "¿Cómo diseñarías un sistema para que los repartidores reciban los cambios de ruta en tiempo real?"},
+    {"tipo": "imprevista", "pausa_s": 8,
+     "texto": "¿Qué harías si a mitad de un sprint te cambian las prioridades y no vas a llegar a la fecha de entrega?"},
+    {"tipo": "prevista", "esperada": "¿Por qué quieres dejar tu trabajo actual?", "pausa_s": 8,
+     "texto": "¿Y qué es lo que te hace querer cambiar de empresa justo ahora?"},
+    {"tipo": "imprevista", "pausa_s": 8,
+     "texto": "¿Qué opinas de usar inteligencia artificial para escribir código en el día a día?"},
+    {"tipo": "prevista", "esperada": "¿Cuáles son tus expectativas salariales?", "pausa_s": 8,
+     "texto": "Hablemos de dinero. ¿Cuánto te gustaría cobrar?"},
+    {"tipo": "prevista", "esperada": "Preguntas que haré", "pausa_s": 8,
+     "texto": "Bueno, pues por nuestra parte eso es todo. ¿Tienes alguna pregunta para nosotros?"}
+  ]
+}

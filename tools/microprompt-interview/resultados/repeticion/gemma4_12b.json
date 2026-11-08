@@ -1,0 +1,261 @@
+{
+ "modelo": "gemma4:12b",
+ "fuente": "hex",
+ "carga": {
+  "cargaMs": 4,
+  "calentamientoMs": 281,
+  "prefijoTokens": 1544,
+  "numCtx": 3072,
+  "vramOllamaMiB": 1092
+ },
+ "gpuMiB": {
+  "antes": 12849,
+  "cargado": 12850,
+  "pico": 13055
+ },
+ "resumen": {
+  "preguntasConTarjeta": 9,
+  "preguntas": 10,
+  "noPreguntasConTarjeta": 0,
+  "previstasAlGuion": 6,
+  "previstas": 6,
+  "imprevistasAlGuion": 0,
+  "modeloTresPuntosMs": {
+   "mediana": 1147,
+   "peor": 1571
+  },
+  "modeloPrimerPuntoMs": {
+   "mediana": 1011,
+   "peor": 1461
+  },
+  "segmentoMs": 665
+ },
+ "filas": [
+  {
+   "turno": 0,
+   "tipo": "no-pregunta",
+   "esperada": null,
+   "asr": "Hola, buenos días, gracias por venir. Te explico cómo va a ser la entrevista. Primero hablamos de ti y luego te cuento el puesto.",
+   "tarjeta": false
+  },
+  {
+   "turno": 1,
+   "tipo": "prevista",
+   "esperada": "Háblame de ti",
+   "asr": "Para empezar, me haces un pequeño resumen de tu trayectoria profesional.",
+   "tarjeta": true,
+   "pregunta": "Para empezar, me haces un pequeño resumen de tu trayectoria profesional.",
+   "finPreguntaMs": 15585,
+   "segmentoMs": 665,
+   "coincide": "Háblame de ti",
+   "puntuacion": 1.0,
+   "fuente": "modelo",
+   "primerPuntoMs": 993,
+   "tresPuntosMs": 1103,
+   "puntos": [
+    "7 años backend con Python y Go",
+    "Experiencia en logística y pagos",
+    "Lidero equipo de 4 personas actualmente"
+   ],
+   "primerTokenMs": 900,
+   "promptTokens": 1555
+  },
+  {
+   "turno": 2,
+   "tipo": "no-pregunta",
+   "esperada": null,
+   "asr": "Vale. Perfecto, muy interesante.",
+   "tarjeta": false
+  },
+  {
+   "turno": 3,
+   "tipo": "prevista",
+   "esperada": "¿Por qué quieres trabajar en Rutalia?",
+   "asr": "¿Y qué es lo que te ha llamado la atención de nuestra empresa?",
+   "tarjeta": true,
+   "pregunta": "Vale. Perfecto, muy interesante. ¿Y qué es lo que te ha llamado la atención de nuestra empresa?",
+   "finPreguntaMs": 31400,
+   "segmentoMs": 694,
+   "coincide": "¿Por qué quieres trabajar en Rutalia?",
+   "puntuacion": 0.67,
+   "fuente": "modelo",
+   "primerPuntoMs": 1038,
+   "tresPuntosMs": 1147,
+   "puntos": [
+    "Vuelvo a logística y optimización de rutas",
+    "Migración a eventos coincide con mi experiencia",
+    "Impacto físico en entregas reales"
+   ],
+   "primerTokenMs": 913,
+   "promptTokens": 1564
+  },
+  {
+   "turno": 4,
+   "tipo": "imprevista",
+   "esperada": null,
+   "asr": "Cuéntame una situación en la que tuviste un conflicto con un compañero y cómo lo resolviste.",
+   "tarjeta": true,
+   "pregunta": "Cuéntame una situación en la que tuviste un conflicto con un compañero y cómo lo resolviste.",
+   "finPreguntaMs": 43805,
+   "segmentoMs": 445,
+   "coincide": null,
+   "puntuacion": 0.0,
+   "fuente": "modelo",
+   "primerPuntoMs": 773,
+   "tresPuntosMs": 867,
+   "puntos": [
+    "Conflicto con producto por plazo imposible",
+    "Propuse versión mínima y fases con datos",
+    "Lanzamos a tiempo sin horas extra"
+   ],
+   "primerTokenMs": 664,
+   "promptTokens": 1563
+  },
+  {
+   "turno": 5,
+   "tipo": "prevista",
+   "esperada": "Cuéntame un proyecto del que estés orgulloso",
+   "asr": "Hablame de algún proyecto que hayas liderado y que saliera especialmente bien.",
+   "tarjeta": true,
+   "pregunta": "Hablame de algún proyecto que hayas liderado y que saliera especialmente bien.",
+   "finPreguntaMs": 55415,
+   "segmentoMs": 491,
+   "coincide": "Cuéntame un proyecto del que estés orgulloso",
+   "puntuacion": 1.0,
+   "fuente": "modelo",
+   "primerPuntoMs": 913,
+   "tresPuntosMs": 1054,
+   "puntos": [
+    "Migración de cobros a eventos con Kafka",
+    "Reducción del 40% en incidencias",
+    "Cero cobros duplicados en 18 meses"
+   ],
+   "primerTokenMs": 866,
+   "promptTokens": 1559
+  },
+  {
+   "turno": 6,
+   "tipo": "no-pregunta",
+   "esperada": null,
+   "asr": "Genial. Te cuento un poco del puesto, el equipo son seis personas. Trabajamos con paiza ni kubernetes, y ahora mismo estamos migrando el sistema de rutas a eventos.",
+   "tarjeta": false
+  },
+  {
+   "turno": 7,
+   "tipo": "imprevista",
+   "esperada": null,
+   "asr": "Como diseñarías un sistema para que los repartidores reciban los cambios de ruta en tiempo real.",
+   "tarjeta": true,
+   "pregunta": "Como diseñarías un sistema para que los repartidores reciban los cambios de ruta en tiempo real.",
+   "finPreguntaMs": 80990,
+   "segmentoMs": 698,
+   "coincide": null,
+   "puntuacion": 0.0,
+   "fuente": "modelo",
+   "primerPuntoMs": 1151,
+   "tresPuntosMs": 1323,
+   "puntos": [
+    "Arquitectura basada en eventos con Kafka",
+    "Consumidores en tiempo real para la app",
+    "Garantizar idempotencia y baja latencia (sugerencia)"
+   ],
+   "primerTokenMs": 1104,
+   "promptTokens": 1562
+  },
+  {
+   "turno": 8,
+   "tipo": "imprevista",
+   "esperada": null,
+   "asr": "Quería si a mitad de un sprint te cambian las prioridades y no vas a llegar a la fecha de entrega.",
+   "tarjeta": false
+  },
+  {
+   "turno": 9,
+   "tipo": "prevista",
+   "esperada": "¿Por qué quieres dejar tu trabajo actual?",
+   "asr": "¿Y qué es lo que te hace querer cambiar de empresa justo ahora?",
+   "tarjeta": true,
+   "pregunta": "¿Y qué es lo que te hace querer cambiar de empresa justo ahora?",
+   "finPreguntaMs": 104145,
+   "segmentoMs": 433,
+   "coincide": "¿Por qué quieres dejar tu trabajo actual?",
+   "puntuacion": 1.0,
+   "fuente": "modelo",
+   "primerPuntoMs": 1011,
+   "tresPuntosMs": 1183,
+   "puntos": [
+    "Plataforma de cobros actual ya madura",
+    "Busco problemas de optimización logística",
+    "Crecimiento personal en Pagaflux fue excelente"
+   ],
+   "primerTokenMs": 933,
+   "promptTokens": 1557
+  },
+  {
+   "turno": 10,
+   "tipo": "imprevista",
+   "esperada": null,
+   "asr": "¿Qué opinas de usar inteligencia artificial para escribir código en el día a día?",
+   "tarjeta": true,
+   "pregunta": "¿Qué opinas de usar inteligencia artificial para escribir código en el día a día?",
+   "finPreguntaMs": 115885,
+   "segmentoMs": 381,
+   "coincide": null,
+   "puntuacion": 0.0,
+   "fuente": "modelo",
+   "primerPuntoMs": 850,
+   "tresPuntosMs": 990,
+   "puntos": [
+    "Aumenta productividad en tareas repetitivas",
+    "Requiere revisión humana para evitar errores (sugerencia)",
+    "Útil para generar tests y documentación rápida"
+   ],
+   "primerTokenMs": 771,
+   "promptTokens": 1559
+  },
+  {
+   "turno": 11,
+   "tipo": "prevista",
+   "esperada": "¿Cuáles son tus expectativas salariales?",
+   "asr": "Hablemos de dinero. ¿Cuánto te gustaría cobrar?",
+   "tarjeta": true,
+   "pregunta": "Hablemos de dinero. ¿Cuánto te gustaría cobrar?",
+   "finPreguntaMs": 127070,
+   "segmentoMs": 1008,
+   "coincide": "¿Cuáles son tus expectativas salariales?",
+   "puntuacion": 1.0,
+   "fuente": "modelo",
+   "primerPuntoMs": 1461,
+   "tresPuntosMs": 1571,
+   "puntos": [
+    "Rango 58–64 k brutos",
+    "Flexible con remoto y formación",
+    "Primero entender el puesto completo"
+   ],
+   "primerTokenMs": 1383,
+   "promptTokens": 1554
+  },
+  {
+   "turno": 12,
+   "tipo": "prevista",
+   "esperada": "Preguntas que haré",
+   "asr": "Bueno. Pues por nuestra parte eso es todo. Tienes alguna pregunta para nosotros.",
+   "tarjeta": true,
+   "pregunta": "Bueno. Pues por nuestra parte eso es todo. Tienes alguna pregunta para nosotros.",
+   "finPreguntaMs": 140570,
+   "segmentoMs": 665,
+   "coincide": "Preguntas que haré",
+   "puntuacion": 1.0,
+   "fuente": "modelo",
+   "primerPuntoMs": 1071,
+   "tresPuntosMs": 1196,
+   "puntos": [
+    "Éxito equipo en 6 meses (medición)",
+    "Estado migración a eventos Kafka",
+    "Esquema guardias y remoto (sugerencia)"
+   ],
+   "primerTokenMs": 899,
+   "promptTokens": 1559
+  }
+ ]
+}

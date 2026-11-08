@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Apuntador</title>
+<style>
+  /* Options from the URL: size (px of the points, default 40), bg, fg (# as %23). */
+  :root {
+    --size: 40px;
+    --fg: #ffffff;
+    --dim: #8f9ba8;
+    --bg: #000000;
+    --accent: #7cc4ff;
+    --mine: #8fe3a5;
+    --font: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: var(--bg); color: var(--fg); font-family: var(--font);
+    display: flex; flex-direction: column; box-sizing: border-box; padding: 3vh 4vw;
+  }
+  #live { color: var(--dim); font-size: calc(var(--size) * 0.45); min-height: 1.4em; }
+  #question { color: var(--dim); font-size: calc(var(--size) * 0.5); margin: 1.2em 0 0.2em; }
+  #source { font-size: calc(var(--size) * 0.4); font-weight: 600; color: var(--accent); }
+  #source.mine { color: var(--mine); }
+  ol { list-style: none; padding: 0; margin: 0.4em 0 0; }
+  li { font-size: var(--size); font-weight: 650; line-height: 1.2; margin: 0.35em 0; }
+  li::before { content: "•"; color: var(--accent); margin-right: 0.4em; }
+  li.typing { color: var(--dim); }
+  .hint { color: var(--dim); font-weight: 400; font-size: 0.7em; }
+  #foot { margin-top: auto; color: var(--dim); font-size: calc(var(--size) * 0.35); }
+</style>
+</head>
+<body>
+<div id="live"></div>
+<div id="question"></div>
+<div id="source"></div>
+<ol id="points"></ol>
+<div id="foot"></div>
+<script>
+  const params = new URLSearchParams(location.search);
+  for (const [key, prop] of [["size", "--size"], ["bg", "--bg"], ["fg", "--fg"]]) {
+    if (params.has(key)) document.documentElement.style.setProperty(prop, key === "size" ? params.get(key) + "px" : params.get(key));
+  }
+  const $ = (id) => document.getElementById(id);
+
+  function render(s) {
+    $("live").textContent = s.live ? "Entrevistador: " + s.live : "";
+    $("question").textContent = s.question ? "«" + s.question + "»" : "";
+    $("source").textContent = s.source;
+    $("source").className = s.source.startsWith("Tu guion") ? "mine" : "";
+    const list = $("points");
+    list.replaceChildren();
+    for (const point of s.points) {
+      const li = document.createElement("li");
+      const m = point.match(/^(.*?)\s*(\(sugerencia\))$/i);
+      li.textContent = m ? m[1] + " " : point;
+      if (m) { const hint = document.createElement("span"); hint.className = "hint"; hint.textContent = m[2]; li.append(hint); }
+      list.append(li);
+    }
+    if (s.typing) { const li = document.createElement("li"); li.className = "typing"; li.textContent = s.typing; list.append(li); }
+    $("foot").textContent = [s.status, s.latency && "tarjeta a " + s.latency + " del final de la pregunta"].filter(Boolean).join(" · ");
+  }
+
+  const initial = /*INITIAL*/null;
+  if (initial) render(initial);
+  const events = new EventSource("/events");
+  events.onmessage = (e) => render(JSON.parse(e.data));
+</script>
+</body>
+</html>
