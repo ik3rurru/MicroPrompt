@@ -176,7 +176,6 @@ evento de instancia única, y no se actualiza solo (`NotInstalled`).
 
 ```powershell
 $env:HEX_APPLICATION_SUPPORT_DIR = "$env:APPDATA\microprompt"
-$env:HEX_STREAM_ATT_RIGHT = "3"   # opcional: parciales cada 320 ms (Fase 4.2)
 .\target\debug\hex.exe app
 py tools\microprompt-captions\captions.py --discovery "$env:APPDATA\microprompt\local-api.json" --open
 ```
@@ -251,6 +250,53 @@ Linux y Windows, con el listener activo), sólo hay un stream a la vez y sólo
 hay parciales con GPU y un modelo de streaming.
 
 ### Fase 2: modo Teleprompter nativo (de 1 a 2 semanas)
+
+**Hecho (SU-01, 7 de noviembre de 2026)**: la sesión, sin ventana, en
+`src/teleprompter.rs` (Linux y Windows), detrás del Lab `teleprompter`.
+`hex teleprompter start|status|stop`. No abre otro micrófono: el
+`ListenerTimeline` del listener le pasa cada trozo y lo mantiene abierto
+mientras corre (también con "Release microphone while idle"). Lo remuestrea a
+16 kHz y lo empuja a un `Stream` de `/streams` propio, con la anticipación de
+subtítulos (R=3). Cada frase cerrada va a `process.log` ("teleprompter
+segment"). Medido con el WAV de Helena (`HEX_AUDIO_FIXTURE`): parciales cada
+0,31 s, primeras palabras a 0,92 s de audio, texto final 0,02 s tras su audio;
+igual que `captions.py` (0,31 / 0,90 / 0,08 s). Límites: si `captions.py`
+abre otro stream a la vez, la ventana de uno de los dos se transcribe sin
+parciales; si el hilo que empuja se atasca más de ~5 s, se pierde audio
+(aviso en el log).
+
+**Hecho (SU-02)**: panel **Teleprompter** en la barra lateral mientras el Lab
+está activo (`src/rune_ui/labs/teleprompter.rs`), en vez de una ventana
+aparte. Muestra toda la sesión, una frase por párrafo a 26 pt, con las
+palabras provisionales atenuadas. El scroll sigue a la última línea mientras
+estás abajo, y el botón Empezar/Parar sesión. El texto queda tras parar,
+hasta la siguiente sesión. La sesión avisa a la ventana en cada cambio; no
+hay sondeo. Escenas `teleprompter` y `teleprompter-idle`.
+
+**Hecho (SU-04)**: al parar, la sesión se guarda en el Historial como una
+entrada de tipo Teleprompter. Guarda el texto (hasta 128 KiB, unas dos horas)
+y los tiempos de cada frase (`HistoryEntry::segments`), y respeta la
+retención del Historial. Paste Last no la usa. La búsqueda y
+`hex history --search` la encuentran. En su detalle, "Guardar como .txt" o
+".srt" escribe el fichero en `Documentos\MicroPrompt` y lo muestra en el
+Explorador. Cada subtítulo del .srt dura desde el inicio de su frase hasta el
+de la siguiente (incluye la pausa). Probado de punta a punta con el WAV:
+5 frases, con tiempos 0:00–3,58 / 3,58–8,48 / 8,48–13,56 / 13,56–18,34 /
+18,34–22,72 s.
+
+**Hecho (SU-03)**: atajo propio para empezar y parar,
+`labs.teleprompter_hotkey`, sin asignar por defecto. Se graba en el panel
+Teleprompter (sólo en Windows y mientras no hay sesión) o con
+`hex settings set labs.teleprompter_hotkey control+option+t`. Settings
+impide que comparta tecla con los atajos de Hex (`HotkeySlot::Teleprompter`).
+En Windows es un `RegisterHotKey` en un hilo propio, fuera del hook de
+teclado de Hex: funciona con la ventana cerrada y no toca la máquina de
+estados del dictado. No hace nada mientras la ventana graba un atajo. En
+Linux, `hex teleprompter toggle` en un atajo del escritorio. Probado en
+Windows con el WAV: Ctrl+Alt+T sin abrir la ventana empieza la sesión, otra
+pulsación la para y se guarda en el Historial; Ctrl+Space (el dictado) se
+rechaza.
+
 
 Siguiendo las convenciones del repo (`AGENTS.md`, `docs/features/labs.md`):
 
@@ -336,6 +382,15 @@ En orden de coste:
      La variable afecta a todo el streaming del proceso, también al dictado
      con el atajo. Con R=13 el texto final del streaming es idéntico al del
      clip completo; con R=3 puede variar.
+   - **Por defecto desde CA-01**: sin variables, los streams de `/streams`
+     (subtítulos) usan R=3 y el dictado con el atajo sigue en R=13
+     (`OfflineGgufSession::captions_stream`). Un modelo que no acepta R
+     (Parakeet Unified) hace los subtítulos como el dictado.
+     `HEX_STREAM_ATT_RIGHT` o `HEX_STREAM_CHUNK_MS` siguen fijando un valor
+     para todo. Medido con el WAV de Helena: subtítulos con parciales cada
+     0,31 s y primeras palabras a 0,90 s; el dictado (`HEX_AUDIO_FIXTURE` y
+     `hex dictation stop --print`) dio el mismo texto y los mismos 15
+     parciales que antes del cambio.
    - Con voz real y micrófono (1 min, R=3) se percibió "bastante rápido" y
      sin pérdidas tras las pausas, con un error ("de espacio" por
      "despacio"). Primera sesión con R=13: "bastante lento". R=3 es el valor
@@ -445,9 +500,21 @@ las fases 1 a 4. Sólo cambian el board y la vista.
 
 ## Decisiones abiertas
 
-1. ~~Sistema operativo y GPU~~: Windows x64 con una RTX 5070 Ti (resuelto).
-2. Idioma: ¿sólo español, o también inglés y otros?
-3. ¿Subtítulos de lo que dices (este plan) o teleprompter con guion (Fase 5)?
-   ¿O las dos cosas?
-4. ¿Dónde se ven? ¿Overlay encima de todo, ventana para OBS o segunda
-   pantalla?
+Resueltas el 7 de noviembre de 2026; las tareas están en el tablero
+(`kanvas.json`).
+
+1. Sistema operativo y GPU: Windows x64 con una RTX 5070 Ti, sólo este PC,
+   sin instalador ni renombrado.
+2. Idioma: español e inglés, a elegir al empezar cada sesión.
+3. Usos: leer tu propia voz en vivo, reuniones y llamadas, y teleprompter
+   con guion (de un fichero `.txt` o `.md`; si improvisas, muestra lo que
+   dices y retoma el guion al volver). Reuniones antes que el guion.
+4. Dónde se ven: una ventana normal de la app, dentro del fork (Rust/Rune),
+   con sólo texto. Se empieza y para con un botón en la ventana y con un
+   atajo de teclado.
+5. Fuentes de audio: micrófono, audio del sistema o ambos, a elegir por
+   sesión. En reuniones basta "Yo / Los demás" por fuente, sin Sortformer.
+6. Sesiones: se guardan en el historial de la app, exportables.
+7. El fork sustituirá al Hex instalado, dictado incluido.
+8. El prototipo de Python queda como banco de pruebas, sin funciones nuevas.
+9. Pendiente: si se traen cambios de Hex (upstream) y cada cuánto.

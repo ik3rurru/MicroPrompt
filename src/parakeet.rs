@@ -1136,6 +1136,13 @@ impl Parakeet {
         self.stream.as_ref()
     }
 
+    /// Stream options for `/streams` (captions); see
+    /// `OfflineGgufSession::captions_stream`.
+    pub(crate) fn captions_stream_options(&self) -> Option<&transcribe_cpp::StreamOptions> {
+        self.stream.as_ref()?;
+        self.session.captions_stream().or(self.stream.as_ref())
+    }
+
     pub(crate) fn with_stream<R>(
         &mut self,
         stream_options: &transcribe_cpp::StreamOptions,

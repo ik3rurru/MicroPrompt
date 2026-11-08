@@ -469,7 +469,7 @@ pub(crate) fn shortcut_rule(
     use crate::app_settings::HotkeySlot;
     let target = match slot {
         HotkeySlot::Dictation => ShortcutTarget::Dictation,
-        HotkeySlot::PasteLast => ShortcutTarget::PasteLast,
+        HotkeySlot::PasteLast | HotkeySlot::Teleprompter => ShortcutTarget::PasteLast,
         HotkeySlot::RawDictation => ShortcutTarget::RawDictation,
         HotkeySlot::Cancel => ShortcutTarget::Cancel,
         #[cfg(hex_capture)]
@@ -1395,6 +1395,7 @@ fn view(ui: &Ui, cx: &mut Cx<Ui>) -> El {
         #[cfg(hex_capture)]
         Pane::Annotate => (Vec::new(), scrawl::pane(ui, p, &mut layer)),
         Pane::VoiceFilter => (Vec::new(), fun::pane(ui, p)),
+        Pane::Teleprompter => labs::teleprompter::pane(ui, p),
         Pane::HudLab => hud_lab::pane(ui, p),
         Pane::Activity => activity::pane(ui, p),
     };

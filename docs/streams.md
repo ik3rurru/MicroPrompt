@@ -111,7 +111,7 @@ data: {"type":"final","text":"So the plan for today is the release. …","segmen
 | --- | --- |
 | `ready` | Sent first: the stream's model and format. |
 | `partial` | The window being transcribed. `stable` is committed text the model won't revise; `tentative` may still change. Replaces the previous partial for the same `segment`. Only when `partials` is true. |
-| `segment` | A finished window's final text (empty windows send none). |
+| `segment` | A finished window's final text (windows without letters or digits send none). |
 | `final` | Every segment joined; the stream has ended. |
 | `error` | `{"code","message"}`; the stream has ended (see codes below). |
 | `cancelled` | The stream was cancelled. |
@@ -163,7 +163,12 @@ every few seconds. The lease doesn't run while finishing.
 Hex's dictation shares the engine, and the hotkey must never wait for a
 stream. So:
 
-- Audio is cut into windows at pauses (at most 25 s). Each window is fed to
+- Audio is cut into windows at pauses (at most 25 s). A pause where the text
+  doesn't end a sentence waits for the words after it: if the model then
+  closes the sentence there, the window is cut at the pause; if more words
+  follow, the sentence stays in one window, until a pause of 2.5 s ends it
+  with a full stop. A window whose text has no letters or digits (a lone
+  "¿" from a breath) sends no segment. Each window is fed to
   the engine as a *yielding* live stream, at most 0.4 s ahead of what the
   engine has decoded, so a dictation request queues behind very little.
 - Any dictation request (the shortcut's capture stream, a whole-clip

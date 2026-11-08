@@ -330,6 +330,8 @@ pub(super) struct PlatformState {
     /// The dictation event log the Activity pane reads (`live.ndjson`);
     /// `None` where the host keeps none.
     pub(super) activity_log: Option<std::path::PathBuf>,
+    /// The Teleprompter pane's session (`crate::teleprompter::view`).
+    pub(super) teleprompter: crate::teleprompter::View,
     /// The Scrawl pane, while the `capture` experiment is on; `None` hides
     /// it.
     #[cfg(hex_capture)]
@@ -392,6 +394,7 @@ impl PlatformState {
             demo: None,
             hud: HudLab::default(),
             activity_log: None,
+            teleprompter: Default::default(),
             #[cfg(hex_capture)]
             scrawl: None,
         }
@@ -734,9 +737,13 @@ impl PlatformHost {
             // Hex Microphone's status is a few atomics on Linux, so it
             // refreshes every frame.
             #[cfg(target_os = "linux")]
-            Self::Local(_) => scrawl_poll(state) | poll_voice_filter(state, true),
+            Self::Local(_) => {
+                scrawl_poll(state)
+                    | poll_voice_filter(state, true)
+                    | super::labs::teleprompter::poll(state)
+            }
             #[cfg(target_os = "windows")]
-            Self::Local(_) => scrawl_poll(state),
+            Self::Local(_) => scrawl_poll(state) | super::labs::teleprompter::poll(state),
             _ => false,
         }
     }

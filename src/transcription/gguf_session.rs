@@ -125,6 +125,9 @@ impl VocabularySlot {
 /// minutes), so a prewarm after it would only repeat work.
 const RECENT_RUN: Duration = Duration::from_secs(60);
 
+/// MicroPrompt: the captions lookahead, in 80 ms encoder frames.
+const CAPTIONS_ATT_RIGHT: i32 = 3;
+
 pub(crate) struct OfflineGgufSession {
     model: transcribe_cpp::Model,
     session: Option<transcribe_cpp::Session>,
@@ -133,6 +136,9 @@ pub(crate) struct OfflineGgufSession {
     last_run: Option<Instant>,
     /// How runs take the vocabulary.
     vocabulary: VocabularySlot,
+    /// MicroPrompt: the faster lookahead `/streams` (captions) use, when
+    /// the model is cache-aware; set by [`Self::probe_stream`].
+    captions_stream: Option<transcribe_cpp::StreamOptions>,
 }
 
 impl OfflineGgufSession {
@@ -154,6 +160,7 @@ impl OfflineGgufSession {
             options,
             last_run: None,
             vocabulary,
+            captions_stream: None,
         })
     }
 
@@ -277,6 +284,11 @@ impl OfflineGgufSession {
                     prewarm_ms = started.elapsed().as_millis(),
                     "streaming transcription is available"
                 );
+                self.captions_stream = (architecture == "parakeet"
+                    && att_context_right.is_none()
+                    && chunk_ms.is_none())
+                .then(|| self.probe_captions_stream(options))
+                .flatten();
                 Some(stream_options)
             }
             Ok(Err(error)) | Err(error) => {
@@ -284,6 +296,52 @@ impl OfflineGgufSession {
                 None
             }
         }
+    }
+
+    /// MicroPrompt: captions take Nemotron's lookahead 3 (240 ms, a partial
+    /// every 320 ms; tools/microprompt-captions/lookahead.py) while dictation
+    /// keeps the default 13, its most accurate. A buffered model (Parakeet
+    /// Unified) rejects it and its captions stream as dictation does.
+    fn probe_captions_stream(
+        &mut self,
+        options: &transcribe_cpp::RunOptions,
+    ) -> Option<transcribe_cpp::StreamOptions> {
+        let captions = transcribe_cpp::StreamOptions {
+            family: Some(transcribe_cpp::StreamExtension::ParakeetStream(
+                transcribe_cpp::ParakeetStreamOptions {
+                    att_context_right: Some(CAPTIONS_ATT_RIGHT),
+                },
+            )),
+            ..Default::default()
+        };
+        let probe = self.with_stream(
+            options,
+            &captions,
+            &transcribe_cpp::CancelToken::new(),
+            |stream| {
+                stream.feed(&vec![0.0; STREAM_PREWARM_SAMPLES])?;
+                stream.finalize().map(|_| ())
+            },
+        );
+        match probe {
+            Ok(Ok(())) => {
+                tracing::info!(
+                    att_context_right = CAPTIONS_ATT_RIGHT,
+                    "captions stream with a shorter lookahead"
+                );
+                Some(captions)
+            }
+            Ok(Err(error)) | Err(error) => {
+                tracing::info!(%error, "captions stream as dictation does");
+                None
+            }
+        }
+    }
+
+    /// Options `/streams` (captions) use: the faster lookahead when the
+    /// model takes one, else the dictation stream's.
+    pub(crate) fn captions_stream(&self) -> Option<&transcribe_cpp::StreamOptions> {
+        self.captions_stream.as_ref()
     }
 
     /// Runs `drive` against one live stream on this session, then rotates the

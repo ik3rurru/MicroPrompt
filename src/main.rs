@@ -65,6 +65,9 @@ mod rune_ui;
 mod screenshots;
 #[cfg(target_os = "macos")]
 mod suppression;
+// The window's pane reads it on every OS; only Linux and Windows feed it.
+#[cfg_attr(target_os = "macos", allow(dead_code))]
+mod teleprompter;
 mod transcription;
 mod updater;
 #[cfg(target_os = "windows")]

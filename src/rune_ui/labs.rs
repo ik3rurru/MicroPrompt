@@ -10,6 +10,7 @@ mod group;
 #[cfg(all(target_os = "macos", hex_capture))]
 mod screenshots;
 mod store;
+pub(super) mod teleprompter;
 
 use rune::{El, Icon, TextEdit, Tx, row, text};
 
@@ -34,9 +35,14 @@ pub(super) static LABS_ICON: Icon = Icon {
 pub(super) fn main_panes(ui: &Ui) -> Vec<Pane> {
     let mut panes = vec![Pane::General, Pane::Output, Pane::History];
     #[cfg(hex_capture)]
-    let optional = [Pane::Meetings, Pane::Annotate, Pane::VoiceFilter];
+    let optional = [
+        Pane::Meetings,
+        Pane::Annotate,
+        Pane::VoiceFilter,
+        Pane::Teleprompter,
+    ];
     #[cfg(not(hex_capture))]
-    let optional = [Pane::Meetings, Pane::VoiceFilter];
+    let optional = [Pane::Meetings, Pane::VoiceFilter, Pane::Teleprompter];
     panes.extend(optional.into_iter().filter(|pane| pane.shown(ui)));
     panes
 }
@@ -353,6 +359,14 @@ fn rows(ui: &Ui) -> Vec<Row> {
         tr("Live text"),
         tr("Show provisional words beside the HUD while dictating"),
     ));
+    if Feature::Teleprompter.on_this_os() {
+        rows.push(row(
+            Feature::Teleprompter,
+            None,
+            "Teleprompter",
+            tr("Live subtitles of your voice: hex teleprompter start, stop, and status"),
+        ));
+    }
     rows.push(row(
         Feature::SettingsSearch,
         Some(SEARCH_ICON),
@@ -762,6 +776,7 @@ fn row_key(lab: Lab) -> &'static str {
         Feature::MoreCallApps => "lab-more-call-apps",
         Feature::AnnotateReplay => "lab-annotate-replay",
         Feature::MeetingImport => "lab-meeting-import",
+        Feature::Teleprompter => "lab-teleprompter",
     }
 }
 

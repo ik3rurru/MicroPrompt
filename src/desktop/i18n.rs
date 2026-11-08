@@ -10,6 +10,7 @@ use std::sync::OnceLock;
 use std::sync::atomic::{AtomicU8, Ordering};
 
 mod french;
+mod microprompt;
 mod portuguese;
 mod russian;
 mod text_language;
@@ -329,12 +330,16 @@ fn tables() -> &'static [HashMap<&'static str, &'static str>; 6] {
     static TABLES: OnceLock<[HashMap<&'static str, &'static str>; 6]> = OnceLock::new();
     TABLES.get_or_init(|| {
         std::array::from_fn(|column| {
-            TRANSLATIONS
-                .iter()
+            translations()
                 .map(|(english, translated)| (*english, translated[column]))
                 .collect()
         })
     })
+}
+
+/// Every row: Hex's, then MicroPrompt's own ([`microprompt::TRANSLATIONS`]).
+fn translations() -> impl Iterator<Item = &'static (&'static str, [&'static str; 6])> {
+    TRANSLATIONS.iter().chain(microprompt::TRANSLATIONS)
 }
 
 /// Columns: Polish, Chinese (Simplified), Japanese, German, Spanish, Ukrainian.
@@ -1506,7 +1511,7 @@ const TRANSLATIONS: &[(&str, [&str; 6])] = &[
 
 #[cfg(test)]
 mod tests {
-    use super::TRANSLATIONS;
+    use super::translations;
     use super::{language_from_env, primary_subtag};
 
     #[test]
@@ -1635,7 +1640,7 @@ mod tests {
 
     #[test]
     fn templates_keep_their_placeholder_in_every_language() {
-        for (english, translated) in TRANSLATIONS {
+        for (english, translated) in translations() {
             if english.contains("{}") {
                 for translation in translated {
                     assert!(
@@ -1695,6 +1700,7 @@ mod tests {
         include_str!("../rune_ui/picker/facts.rs"),
         include_str!("../rune_ui/picker/list.rs"),
         include_str!("../rune_ui/platform_settings.rs"),
+        include_str!("../rune_ui/labs/teleprompter.rs"),
         #[cfg(hex_capture)]
         include_str!("../rune_ui/scrawl.rs"),
         #[cfg(hex_capture)]
@@ -1764,7 +1770,7 @@ mod tests {
 
     #[test]
     fn every_translated_string_has_every_language() {
-        let table: std::collections::HashMap<_, _> = TRANSLATIONS.iter().copied().collect();
+        let table: std::collections::HashMap<_, _> = translations().copied().collect();
         let mut checked = 0;
         for source in SOURCES {
             for literal in translated_literals(source) {
@@ -1788,7 +1794,7 @@ mod tests {
     #[test]
     fn every_sound_set_string_has_every_language() {
         use crate::feedback::{Cue, SoundSet};
-        let table: std::collections::HashMap<_, _> = TRANSLATIONS.iter().copied().collect();
+        let table: std::collections::HashMap<_, _> = translations().copied().collect();
         let strings = SoundSet::ALL
             .into_iter()
             .flat_map(|set| [set.name(), set.character()])
@@ -1807,7 +1813,7 @@ mod tests {
 
     #[test]
     fn named_placeholders_survive_translation() {
-        for (english, translated) in TRANSLATIONS {
+        for (english, translated) in translations() {
             let names = english
                 .split('{')
                 .skip(1)
@@ -1828,7 +1834,7 @@ mod tests {
     #[test]
     fn keys_are_unique() {
         let mut seen = std::collections::HashSet::new();
-        for (english, _) in TRANSLATIONS {
+        for (english, _) in translations() {
             assert!(
                 seen.insert(english),
                 "duplicate translation key {english:?}"

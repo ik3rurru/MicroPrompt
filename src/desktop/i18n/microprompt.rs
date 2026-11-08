@@ -1,0 +1,23 @@
+//! MicroPrompt's own interface strings (the Teleprompter), kept apart from
+//! Hex's table so merges from upstream stay clean. Same columns as
+//! [`super::TRANSLATIONS`]; French, Portuguese, and Russian live in their
+//! own tables as for every other string.
+
+#[rustfmt::skip]
+pub(super) const TRANSLATIONS: &[(&str, [&str; 6])] = &[
+    ("Couldn't save it: {}", ["Nie udało się zapisać: {}", "无法保存：{}", "保存できませんでした：{}", "Speichern fehlgeschlagen: {}", "No se pudo guardar: {}", "Не вдалося зберегти: {}"]),
+    ("Saved to {}", ["Zapisano w {}", "已保存到 {}", "{} に保存しました", "Gesichert unter {}", "Guardado en {}", "Збережено в {}"]),
+    ("Save as .srt", ["Zapisz jako .srt", "存为 .srt", ".srt で保存", "Als .srt sichern", "Guardar como .srt", "Зберегти як .srt"]),
+    ("Save as .txt", ["Zapisz jako .txt", "存为 .txt", ".txt で保存", "Als .txt sichern", "Guardar como .txt", "Зберегти як .txt"]),
+    ("Export", ["Eksport", "导出", "書き出し", "Exportieren", "Exportar", "Експорт"]),
+    ("Teleprompter", ["Teleprompter", "提词器", "テレプロンプター", "Teleprompter", "Teleprompter", "Телесуфлер"]),
+    ("Start a session and speak; your words show here", ["Rozpocznij sesję i mów; Twoje słowa pojawią się tutaj", "开始会话并说话；你的话会显示在这里", "セッションを開始して話すと、ここに言葉が表示されます", "Starte eine Sitzung und sprich; deine Worte erscheinen hier", "Empieza una sesión y habla; tus palabras aparecen aquí", "Почніть сеанс і говоріть; ваші слова з’являться тут"]),
+    ("Listening… your words show here", ["Słucham… Twoje słowa pojawią się tutaj", "正在聆听…你的话会显示在这里", "聞いています…話した言葉がここに表示されます", "Hört zu… deine Worte erscheinen hier", "Escuchando… tus palabras aparecen aquí", "Слухаю… ваші слова з’являться тут"]),
+    ("Stopping…", ["Zatrzymywanie…", "正在停止…", "停止しています…", "Wird beendet…", "Parando…", "Зупинення…"]),
+    ("Stop session", ["Zakończ sesję", "停止会话", "セッションを停止", "Sitzung beenden", "Parar sesión", "Зупинити сеанс"]),
+    ("Start session", ["Rozpocznij sesję", "开始会话", "セッションを開始", "Sitzung starten", "Empezar sesión", "Почати сеанс"]),
+    ("Live subtitles of your voice: hex teleprompter start, stop, and status", ["Napisy na żywo z Twojego głosu: hex teleprompter start, stop i status", "实时显示你说话的字幕：hex teleprompter start、stop 和 status", "声をリアルタイムで字幕に：hex teleprompter start、stop、status", "Live-Untertitel deiner Stimme: hex teleprompter start, stop und status", "Subtítulos en directo de tu voz: hex teleprompter start, stop y status", "Субтитри вашого голосу наживо: hex teleprompter start, stop і status"]),
+    ("Duration", ["Czas trwania", "时长", "長さ", "Dauer", "Duración", "Тривалість"]),
+    ("Start and stop the session", ["Rozpocznij i zakończ sesję", "开始和停止会话", "セッションの開始と停止", "Sitzung starten und beenden", "Empezar y parar la sesión", "Почати й зупинити сеанс"]),
+    ("Works with the window closed", ["Działa przy zamkniętym oknie", "窗口关闭时也可用", "ウィンドウを閉じていても使えます", "Funktioniert bei geschlossenem Fenster", "Funciona con la ventana cerrada", "Працює із закритим вікном"]),
+];

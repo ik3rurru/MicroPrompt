@@ -10,6 +10,10 @@ struct Fake {
     lost_model: AtomicBool,
     lives: Mutex<Vec<Arc<FakeLiveState>>>,
     offline: Mutex<Vec<usize>>,
+    /// What every live stream's partial says, instead of `heard N`.
+    partial: Mutex<Option<String>>,
+    /// What every live stream finishes with, instead of `live N`.
+    reply: Mutex<Option<String>>,
 }
 
 #[derive(Default)]
@@ -69,7 +73,7 @@ impl Engine for FakeEngine {
         }
         let state = Arc::new(FakeLiveState::default());
         self.0.lives.lock().unwrap().push(state.clone());
-        Some(Box::new(FakeLive(state)))
+        Some(Box::new(FakeLive(state, self.0.clone())))
     }
 
     fn transcribe(&self, window: Vec<f32>, stop: &dyn Fn() -> bool) -> Result<String, String> {
@@ -88,7 +92,7 @@ impl Engine for FakeEngine {
     }
 }
 
-struct FakeLive(Arc<FakeLiveState>);
+struct FakeLive(Arc<FakeLiveState>, Arc<Fake>);
 
 impl Live for FakeLive {
     fn open(&self) -> bool {
@@ -105,8 +109,9 @@ impl Live for FakeLive {
     }
 
     fn partial(&self) -> Option<Partial> {
+        let said = self.1.partial.lock().unwrap().clone();
         Some(Partial {
-            stable: format!("heard {}", self.0.fed.load(Ordering::SeqCst)),
+            stable: said.unwrap_or_else(|| format!("heard {}", self.0.fed.load(Ordering::SeqCst))),
             tentative: String::new(),
         })
     }
@@ -115,7 +120,8 @@ impl Live for FakeLive {
         if !self.open() {
             return Err(crate::transcription::engine::PREEMPTED.into());
         }
-        Ok(format!("live {}", self.0.fed.load(Ordering::SeqCst)))
+        let reply = self.1.reply.lock().unwrap().clone();
+        Ok(reply.unwrap_or_else(|| format!("live {}", self.0.fed.load(Ordering::SeqCst))))
     }
 }
 
@@ -410,4 +416,138 @@ impl Stream {
             state = self.shared.changed.wait_timeout(state, POLL).unwrap().0;
         }
     }
+}
+
+/// Pushes `audio[from..to]` as a live client does, 100 ms at a time, each
+/// fed to a live stream before the next.
+fn push_live(stream: &Stream, engine: &FakeEngine, audio: &[f32], from: usize, to: usize) {
+    for start in (from..to).step_by(FEED_SAMPLES) {
+        let end = (start + FEED_SAMPLES).min(to);
+        stream.push(&audio[start..end]).unwrap();
+        eventually(|| {
+            let lives = engine.lives();
+            let fed: usize = lives
+                .iter()
+                .map(|live| live.fed.load(Ordering::SeqCst))
+                .sum();
+            fed >= end - from
+        });
+    }
+}
+
+/// Sets what the live streams' partial says and waits until the worker
+/// published it (it settles a held cut right after).
+fn say(stream: &Stream, engine: &FakeEngine, text: &str) {
+    *engine.0.partial.lock().unwrap() = Some(text.into());
+    eventually(|| {
+        stream
+            .shared
+            .lock()
+            .partial
+            .as_ref()
+            .is_some_and(|(_, _, partial)| partial.stable == text)
+    });
+}
+
+/// "Este modelo", a 1 s pause, then 2 s more speech; the model says
+/// `after` once speech is back.
+fn pause_inside_a_sentence(after: &str) -> End {
+    use crate::transcription::pause_segmenter::tests::utterance;
+    let audio = utterance(&[(4_000, 1_000), (2_000, 0)], -70.0);
+    let at = |ms: usize| ms * SAMPLE_RATE / 1_000;
+    let engine = FakeEngine::default();
+    let streams = Streams::default();
+    let stream = create(&streams, &engine);
+    *engine.0.partial.lock().unwrap() = Some("Este modelo".into());
+    // The pause cuts at 4.3 s, but "Este modelo" doesn't end a sentence.
+    push_live(&stream, &engine, &audio, 0, at(5_200));
+    say(&stream, &engine, after);
+    stream.push(&audio[at(5_200)..]).unwrap();
+    finish(&stream)
+}
+
+#[test]
+fn a_pause_inside_a_sentence_keeps_it_in_one_window() {
+    let end = pause_inside_a_sentence("Este modelo podría");
+    assert_eq!(texts(&end), ["live 112000"]);
+    let End::Final { segments, .. } = &end else {
+        unreachable!()
+    };
+    assert_eq!((segments[0].start_ms, segments[0].end_ms), (0, 7_000));
+}
+
+#[test]
+fn a_sentence_the_model_ends_at_the_pause_is_cut_there() {
+    let end = pause_inside_a_sentence("Este modelo. Podría");
+    // The rest streams again from the cut: 2.7 s.
+    assert_eq!(texts(&end), ["Este modelo.", "live 43200"]);
+    let End::Final { segments, .. } = &end else {
+        unreachable!()
+    };
+    assert_eq!((segments[0].start_ms, segments[0].end_ms), (0, 4_300));
+    assert_eq!((segments[1].start_ms, segments[1].end_ms), (4_300, 7_000));
+}
+
+#[test]
+fn a_window_without_words_sends_no_segment() {
+    let engine = FakeEngine::default();
+    *engine.0.reply.lock().unwrap() = Some("¿".into());
+    let streams = Streams::default();
+    let stream = create(&streams, &engine);
+    stream.push(&[0.0; 8_000]).unwrap();
+    assert!(texts(&finish(&stream)).is_empty());
+}
+
+#[test]
+fn a_held_pause_of_two_and_a_half_seconds_ends_the_sentence() {
+    use crate::transcription::pause_segmenter::tests::utterance;
+    let audio = utterance(&[(4_000, 3_000)], -70.0);
+    let engine = FakeEngine::default();
+    *engine.0.partial.lock().unwrap() = Some("Este modelo".into());
+    let streams = Streams::default();
+    let stream = create(&streams, &engine);
+    push_live(&stream, &engine, &audio, 0, audio.len());
+    let end = finish(&stream);
+    let End::Final { segments, .. } = &end else {
+        unreachable!()
+    };
+    // Closed by its live stream, with a full stop, 2.5 s into the pause.
+    assert!(
+        segments[0].text.starts_with("live ") && segments[0].text.ends_with('.'),
+        "{segments:?}"
+    );
+    assert!(
+        (6_400..=6_600).contains(&segments[0].end_ms),
+        "{segments:?}"
+    );
+}
+
+#[test]
+fn words_the_model_catches_up_on_during_the_pause_stay_in_the_window() {
+    use crate::transcription::pause_segmenter::tests::utterance;
+    // "Gracias. Este modelo", a 1 s pause, then "podría": the decode lags,
+    // so at the cut (4.6 s) the model has only said "Gracias".
+    let audio = utterance(&[(4_000, 1_000), (2_000, 0)], -70.0);
+    let at = |ms: usize| ms * SAMPLE_RATE / 1_000;
+    let engine = FakeEngine::default();
+    let streams = Streams::default();
+    let stream = create(&streams, &engine);
+    *engine.0.partial.lock().unwrap() = Some("Gracias".into());
+    push_live(&stream, &engine, &audio, 0, at(4_800));
+    // Still in the pause, it catches up on the words before it.
+    say(&stream, &engine, "Gracias. Este modelo");
+    stream.push(&audio[at(4_800)..at(5_200)]).unwrap();
+    eventually(|| {
+        let fed: usize = engine
+            .lives()
+            .iter()
+            .map(|live| live.fed.load(Ordering::SeqCst))
+            .sum();
+        fed >= at(5_200)
+    });
+    say(&stream, &engine, "Gracias. Este modelo podría");
+    stream.push(&audio[at(5_200)..]).unwrap();
+    // "Este modelo" is before the cut: closing the window on "Gracias."
+    // there would lose it.
+    assert_eq!(texts(&finish(&stream)), ["live 112000"]);
 }

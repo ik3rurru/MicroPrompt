@@ -194,6 +194,7 @@ impl WindowsDesktopHost {
         indicator: crate::rune_hud::HudSender,
     ) -> Self {
         crate::desktop::i18n::apply(settings.ui_language.as_deref());
+        crate::teleprompter::hotkey::apply(&settings);
         let mut event_reader = EventReader::open(&event_path);
         let mut activity = DesktopActivity::default();
         activity.refresh(&mut event_reader);
@@ -500,6 +501,7 @@ impl WindowsDesktopHost {
         }
         let previous = std::mem::replace(&mut self.settings, settings.clone());
         let current = settings;
+        crate::teleprompter::hotkey::apply(current);
         crate::feedback::set_enabled(current.sound_effects);
         crate::feedback::set_volume(current.sound_effect_volume.clamp(0.0, 1.0));
         crate::feedback::set_sound_set(current.sound_theme);

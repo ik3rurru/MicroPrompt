@@ -50,6 +50,7 @@ impl Backend {
         if let Some(runtime) = &runtime {
             runtime.subscribe(wake.clone());
         }
+        crate::teleprompter::set_waker(wake.clone());
         Self {
             runtime,
             wake,

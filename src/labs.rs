@@ -114,10 +114,11 @@ pub enum Feature {
     MoreCallApps,
     AnnotateReplay,
     MeetingImport,
+    Teleprompter,
 }
 
 impl Feature {
-    pub const ALL: [Self; 50] = [
+    pub const ALL: [Self; 51] = [
         Self::Meetings,
         Self::VoiceFilter,
         Self::Playground,
@@ -168,6 +169,7 @@ impl Feature {
         Self::MoreCallApps,
         Self::AnnotateReplay,
         Self::MeetingImport,
+        Self::Teleprompter,
     ];
 
     /// The features this OS and build have.
@@ -242,6 +244,7 @@ impl Feature {
             | Self::MoreCallApps
             | Self::AnnotateReplay
             | Self::MeetingImport
+            | Self::Teleprompter
             | Self::NotchIndicator => Audience::Everyone,
         }
     }
@@ -297,6 +300,7 @@ impl Feature {
             | Self::FollowLiveTranscript
             | Self::AnnotateReplay => 20261104,
             Self::MoreCallApps | Self::SettingsSearch | Self::MeetingImport => 20261106,
+            Self::Teleprompter => 20261107,
         }
     }
 
@@ -339,7 +343,8 @@ impl Feature {
             Self::SectionKeyAlone | Self::GnomeClipboardRestore | Self::GnomeMeetingCapsules => {
                 cfg!(target_os = "linux")
             }
-            Self::StandaloneSpecialKeys | Self::SkipPauses => {
+            // MicroPrompt: it copies the Linux and Windows listener's microphone.
+            Self::StandaloneSpecialKeys | Self::SkipPauses | Self::Teleprompter => {
                 cfg!(any(target_os = "linux", target_os = "windows"))
             }
             Self::MouseShortcuts
@@ -443,6 +448,7 @@ impl Feature {
             Self::MoreCallApps => "more-call-apps",
             Self::AnnotateReplay => "annotate-replay",
             Self::MeetingImport => "meeting-import",
+            Self::Teleprompter => "teleprompter",
         }
     }
 
@@ -499,6 +505,7 @@ impl Feature {
             Self::MoreCallApps => "labs.more_call_apps",
             Self::AnnotateReplay => "labs.annotate_replay",
             Self::MeetingImport => "labs.meeting_import",
+            Self::Teleprompter => "labs.teleprompter",
         }
     }
 
@@ -635,6 +642,9 @@ impl Feature {
             Self::MeetingImport => {
                 "Import an audio file into Meetings and transcribe it on this Mac"
             }
+            Self::Teleprompter => {
+                "Live subtitles of your voice: hex teleprompter start, stop, and status"
+            }
         }
     }
 
@@ -695,6 +705,7 @@ impl Feature {
             Self::MoreCallApps => settings.labs.more_call_apps,
             Self::AnnotateReplay => settings.labs.annotate_replay,
             Self::MeetingImport => settings.labs.meeting_import,
+            Self::Teleprompter => settings.labs.teleprompter,
         }
     }
 
@@ -753,6 +764,7 @@ impl Feature {
             &mut labs.more_call_apps,
             &mut labs.annotate_replay,
             &mut labs.meeting_import,
+            &mut labs.teleprompter,
         ]
     }
 
@@ -811,6 +823,7 @@ impl Feature {
             Self::MoreCallApps => settings.labs.more_call_apps = on,
             Self::AnnotateReplay => settings.labs.annotate_replay = on,
             Self::MeetingImport => settings.labs.meeting_import = on,
+            Self::Teleprompter => settings.labs.teleprompter = on,
             // Off, no shortcut keeps a key only the feature allows.
             Self::StandaloneSpecialKeys => {
                 settings.labs.standalone_special_keys = on;

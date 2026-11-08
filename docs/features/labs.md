@@ -28,6 +28,17 @@ Feature             Pane  Toggle (settings.json, hex settings)   On: what it doe
 ├── Playground (Dev) yes  labs.playground                        a Playground sidebar item and ⇧⌘D open the story browser
 ├── Live text       no    labs.live_text                         provisional words beside the HUD while dictating
 ├── Settings search no    labs.settings_search                  a search field atop General filters its rows, Advanced's included
+├── Teleprompter    yes   labs.teleprompter     (Linux, Windows)  MicroPrompt: live subtitles of the microphone; hex teleprompter start|status|stop
+│                                        Teleprompter joins the sidebar: the session's text, provisional words faint, Start/Stop session
+│                                        (src/teleprompter.rs, src/rune_ui/labs/teleprompter.rs; scenes teleprompter, teleprompter-idle;
+│                                        checked by hand on Windows with HEX_AUDIO_FIXTURE and UI Automation; no golden yet)
+│                                        a stopped session is kept in History (kind Teleprompter, timed lines, 128 KiB of text)
+│                                        and saves as .txt or .srt into Documents/MicroPrompt (scene history-teleprompter)
+│                                        labs.teleprompter_hotkey (unbound): a Windows system hotkey (RegisterHotKey, src/teleprompter/hotkey.rs)
+│                                        starts and stops it with the window closed; Linux binds `hex teleprompter toggle`
+│                                        a line ends where the model ends a sentence: a pause mid-sentence waits for the next words
+│                                        (up to 2.5 s), and wordless lines ("¿") are dropped (src/transcription/stream.rs, CA-02;
+│                                        a_pause_inside_a_sentence_keeps_it_in_one_window and four more in stream_tests.rs)
 ├── Live chapters   no    labs.live_chapters           (macOS)   chapters a meeting while it records, boundary pass after Stop
 ├── Vocabulary biasing no labs.vocabulary_biasing                Parakeet transcription biased toward the vocabulary (#452/#457)
 ├── Switch model with keyboard language  no  keyboard_model_switching.enabled  (macOS, Windows, X11)

@@ -745,7 +745,7 @@ fn render_subtitles<'a>(
 
 /// The entry's text with blank lines and `-->` removed, so it can't end
 /// or break its cue.
-fn cue_text(text: &str) -> String {
+pub(crate) fn cue_text(text: &str) -> String {
     text.replace("-->", "->")
         .lines()
         .map(str::trim)
@@ -755,7 +755,7 @@ fn cue_text(text: &str) -> String {
 }
 
 /// `HH:MM:SS,mmm` (SRT) or `HH:MM:SS.mmm` (VTT); hours grow past 99.
-fn subtitle_time(ms: u64, separator: char) -> String {
+pub(crate) fn subtitle_time(ms: u64, separator: char) -> String {
     let hours = ms / 3_600_000;
     let minutes = ms / 60_000 % 60;
     let seconds = ms / 1_000 % 60;
