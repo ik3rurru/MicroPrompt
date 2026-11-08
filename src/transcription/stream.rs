@@ -653,6 +653,9 @@ struct Held {
     at: usize,
     /// Words the model had heard when the pause cut.
     words: usize,
+    /// No speech since the cut: words the model adds now are from before
+    /// the pause, its decode catching up (lookahead, a busy engine).
+    quiet: bool,
 }
 
 impl<E: Engine> Worker<E> {
@@ -758,6 +761,11 @@ impl<E: Engine> Worker<E> {
         for frame in audio.chunks(FRAME_SAMPLES) {
             self.window.audio.extend_from_slice(frame);
             let cut = self.segmenter.push(frame);
+            if self.segmenter.pause().is_zero()
+                && let Some(held) = self.held.as_mut()
+            {
+                held.quiet = false;
+            }
             let over = self.held.is_some() && self.segmenter.pause() >= MAX_PAUSE;
             let close = match cut {
                 _ if self.held.is_some() => over,
@@ -787,7 +795,11 @@ impl<E: Engine> Worker<E> {
         if !heard || words == 0 || text.trim_end().ends_with(SENTENCE_END) {
             return false;
         }
-        self.held = Some(Held { at, words });
+        self.held = Some(Held {
+            at,
+            words,
+            quiet: true,
+        });
         true
     }
 
@@ -795,7 +807,7 @@ impl<E: Engine> Worker<E> {
     /// sentence end on the word before the pause cuts the window there,
     /// with the committed words up to it; none keeps the sentence going.
     fn settle_held(&mut self) -> Result<(), End> {
-        let Some(held) = self.held.take() else {
+        let Some(mut held) = self.held.take() else {
             return Ok(());
         };
         let partial = self
@@ -804,6 +816,12 @@ impl<E: Engine> Worker<E> {
             .as_ref()
             .filter(|live| live.open())
             .and_then(|live| live.partial());
+        if held.quiet
+            && let Some(partial) = &partial
+        {
+            let text = format!("{}{}", partial.stable, partial.tentative);
+            held.words = held.words.max(word_count(&text));
+        }
         let stable = partial
             .as_ref()
             .map(|partial| partial.stable.split_whitespace().collect::<Vec<_>>())

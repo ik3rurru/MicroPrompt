@@ -521,3 +521,33 @@ fn a_held_pause_of_two_and_a_half_seconds_ends_the_sentence() {
         "{segments:?}"
     );
 }
+
+#[test]
+fn words_the_model_catches_up_on_during_the_pause_stay_in_the_window() {
+    use crate::transcription::pause_segmenter::tests::utterance;
+    // "Gracias. Este modelo", a 1 s pause, then "podría": the decode lags,
+    // so at the cut (4.6 s) the model has only said "Gracias".
+    let audio = utterance(&[(4_000, 1_000), (2_000, 0)], -70.0);
+    let at = |ms: usize| ms * SAMPLE_RATE / 1_000;
+    let engine = FakeEngine::default();
+    let streams = Streams::default();
+    let stream = create(&streams, &engine);
+    *engine.0.partial.lock().unwrap() = Some("Gracias".into());
+    push_live(&stream, &engine, &audio, 0, at(4_800));
+    // Still in the pause, it catches up on the words before it.
+    say(&stream, &engine, "Gracias. Este modelo");
+    stream.push(&audio[at(4_800)..at(5_200)]).unwrap();
+    eventually(|| {
+        let fed: usize = engine
+            .lives()
+            .iter()
+            .map(|live| live.fed.load(Ordering::SeqCst))
+            .sum();
+        fed >= at(5_200)
+    });
+    say(&stream, &engine, "Gracias. Este modelo podría");
+    stream.push(&audio[at(5_200)..]).unwrap();
+    // "Este modelo" is before the cut: closing the window on "Gracias."
+    // there would lose it.
+    assert_eq!(texts(&finish(&stream)), ["live 112000"]);
+}
