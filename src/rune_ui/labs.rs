@@ -367,6 +367,12 @@ fn rows(ui: &Ui) -> Vec<Row> {
             "Teleprompter",
             tr("Live subtitles of your voice: hex teleprompter start, stop, and status"),
         ));
+        rows.push(row(
+            Feature::Interview,
+            None,
+            tr("Interview prep"),
+            tr("Teleprompter opens an interview script by sections, with your CV, the offer, and company notes"),
+        ));
     }
     rows.push(row(
         Feature::SettingsSearch,
@@ -778,6 +784,7 @@ fn row_key(lab: Lab) -> &'static str {
         Feature::AnnotateReplay => "lab-annotate-replay",
         Feature::MeetingImport => "lab-meeting-import",
         Feature::Teleprompter => "lab-teleprompter",
+        Feature::Interview => "lab-interview",
     }
 }
 

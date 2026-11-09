@@ -43,26 +43,7 @@ impl Script {
     /// list, a table…) as their source, so the pane spaces them for reading
     /// at a distance: rune-kit's own margins are sized for small text.
     pub(crate) fn blocks(&self) -> Vec<&str> {
-        use pulldown_cmark::{Event, Options, Parser};
-        let options =
-            Options::ENABLE_STRIKETHROUGH | Options::ENABLE_TABLES | Options::ENABLE_TASKLISTS;
-        let mut depth = 0usize;
-        let mut blocks = Vec::new();
-        for (event, range) in Parser::new_ext(&self.text, options).into_offset_iter() {
-            match event {
-                Event::Start(_) => {
-                    if depth == 0 {
-                        blocks.push(self.text[range].trim_end());
-                    }
-                    depth += 1;
-                }
-                Event::End(_) => depth -= 1,
-                // A rule or raw HTML is a block of its own with no Start.
-                _ if depth == 0 => blocks.push(self.text[range].trim_end()),
-                _ => {}
-            }
-        }
-        blocks
+        blocks(&self.text)
     }
 
     /// A `.txt`'s paragraphs: blank lines end one, its lines flow together.
@@ -72,6 +53,31 @@ impl Script {
             .map(|block| block.split_whitespace().collect::<Vec<_>>().join(" "))
             .filter(|paragraph| !paragraph.is_empty())
     }
+}
+
+/// Markdown `text`'s top-level blocks, each a slice of it
+/// ([`Script::blocks`]).
+pub(crate) fn blocks(text: &str) -> Vec<&str> {
+    use pulldown_cmark::{Event, Options, Parser};
+    let options =
+        Options::ENABLE_STRIKETHROUGH | Options::ENABLE_TABLES | Options::ENABLE_TASKLISTS;
+    let mut depth = 0usize;
+    let mut blocks = Vec::new();
+    for (event, range) in Parser::new_ext(text, options).into_offset_iter() {
+        match event {
+            Event::Start(_) => {
+                if depth == 0 {
+                    blocks.push(text[range].trim_end());
+                }
+                depth += 1;
+            }
+            Event::End(_) => depth -= 1,
+            // A rule or raw HTML is a block of its own with no Start.
+            _ if depth == 0 => blocks.push(text[range].trim_end()),
+            _ => {}
+        }
+    }
+    blocks
 }
 
 #[cfg(test)]

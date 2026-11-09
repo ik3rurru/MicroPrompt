@@ -115,10 +115,11 @@ pub enum Feature {
     AnnotateReplay,
     MeetingImport,
     Teleprompter,
+    Interview,
 }
 
 impl Feature {
-    pub const ALL: [Self; 51] = [
+    pub const ALL: [Self; 52] = [
         Self::Meetings,
         Self::VoiceFilter,
         Self::Playground,
@@ -170,6 +171,7 @@ impl Feature {
         Self::AnnotateReplay,
         Self::MeetingImport,
         Self::Teleprompter,
+        Self::Interview,
     ];
 
     /// The features this OS and build have.
@@ -245,6 +247,7 @@ impl Feature {
             | Self::AnnotateReplay
             | Self::MeetingImport
             | Self::Teleprompter
+            | Self::Interview
             | Self::NotchIndicator => Audience::Everyone,
         }
     }
@@ -301,6 +304,7 @@ impl Feature {
             | Self::AnnotateReplay => 20261104,
             Self::MoreCallApps | Self::SettingsSearch | Self::MeetingImport => 20261106,
             Self::Teleprompter => 20261107,
+            Self::Interview => 20261109,
         }
     }
 
@@ -344,7 +348,10 @@ impl Feature {
                 cfg!(target_os = "linux")
             }
             // MicroPrompt: it copies the Linux and Windows listener's microphone.
-            Self::StandaloneSpecialKeys | Self::SkipPauses | Self::Teleprompter => {
+            Self::StandaloneSpecialKeys
+            | Self::SkipPauses
+            | Self::Teleprompter
+            | Self::Interview => {
                 cfg!(any(target_os = "linux", target_os = "windows"))
             }
             Self::MouseShortcuts
@@ -449,6 +456,7 @@ impl Feature {
             Self::AnnotateReplay => "annotate-replay",
             Self::MeetingImport => "meeting-import",
             Self::Teleprompter => "teleprompter",
+            Self::Interview => "interview",
         }
     }
 
@@ -506,6 +514,7 @@ impl Feature {
             Self::AnnotateReplay => "labs.annotate_replay",
             Self::MeetingImport => "labs.meeting_import",
             Self::Teleprompter => "labs.teleprompter",
+            Self::Interview => "labs.interview",
         }
     }
 
@@ -645,6 +654,9 @@ impl Feature {
             Self::Teleprompter => {
                 "Live subtitles of your voice: hex teleprompter start, stop, and status"
             }
+            Self::Interview => {
+                "Teleprompter opens an interview script by sections, with your CV, the offer, and company notes"
+            }
         }
     }
 
@@ -706,6 +718,7 @@ impl Feature {
             Self::AnnotateReplay => settings.labs.annotate_replay,
             Self::MeetingImport => settings.labs.meeting_import,
             Self::Teleprompter => settings.labs.teleprompter,
+            Self::Interview => settings.labs.interview,
         }
     }
 
@@ -765,6 +778,7 @@ impl Feature {
             &mut labs.annotate_replay,
             &mut labs.meeting_import,
             &mut labs.teleprompter,
+            &mut labs.interview,
         ]
     }
 
@@ -824,6 +838,7 @@ impl Feature {
             Self::AnnotateReplay => settings.labs.annotate_replay = on,
             Self::MeetingImport => settings.labs.meeting_import = on,
             Self::Teleprompter => settings.labs.teleprompter = on,
+            Self::Interview => settings.labs.interview = on,
             // Off, no shortcut keeps a key only the feature allows.
             Self::StandaloneSpecialKeys => {
                 settings.labs.standalone_special_keys = on;

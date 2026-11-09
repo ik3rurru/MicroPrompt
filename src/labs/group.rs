@@ -60,6 +60,7 @@ impl Feature {
             | Self::HideMenuBarIcon
             | Self::SettingsSearch
             | Self::Teleprompter
+            | Self::Interview
             | Self::Playground => Group::Dictation,
             Self::SmartSpacing
             | Self::SpokenFormatting

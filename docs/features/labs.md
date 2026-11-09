@@ -52,6 +52,15 @@ Feature             Pane  Toggle (settings.json, hex settings)   On: what it doe
 │                                        for this run of Hex only, sent as the loaded model's language hint (no reload, Settings
 │                                        untouched; default English when dictation is English, else Spanish); a model without
 │                                        it refuses to start and says so (Parakeet Unified English: no Spanish)
+├── Interview prep  no    labs.interview        (Linux, Windows)  MicroPrompt: in Teleprompter, Open script… on a Markdown script with `## ` sections
+│                                        (tools/microprompt-interview's template) shows one section at a time, picked from a segmented
+│                                        row of their titles; the section of questions to ask ("Preguntas que haré", "… to ask") lists
+│                                        them as tasks, and a click ticks one off, struck through, until the script closes; CV…, Offer…
+│                                        and Company notes… choose a .md or .txt each, taken by name from the script's folder when it
+│                                        opens (cv, oferta/offer, empresa/company); all local and in memory, nothing is sent or saved
+│                                        (src/teleprompter/interview.rs, src/rune_ui/labs/teleprompter_script.rs; scenes
+│                                        teleprompter-interview, teleprompter-interview-stories; sections, ticks, and documents
+│                                        unit-tested; the file dialog and the clicks not exercised; no golden)
 ├── Live chapters   no    labs.live_chapters           (macOS)   chapters a meeting while it records, boundary pass after Stop
 ├── Vocabulary biasing no labs.vocabulary_biasing                Parakeet transcription biased toward the vocabulary (#452/#457)
 ├── Switch model with keyboard language  no  keyboard_model_switching.enabled  (macOS, Windows, X11)

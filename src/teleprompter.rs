@@ -20,6 +20,7 @@ use crate::history::{HistoryDraft, HistoryEntry, HistoryKind, HistorySegment};
 
 #[cfg(target_os = "windows")]
 pub(crate) mod hotkey;
+pub(crate) mod interview;
 pub(crate) mod language;
 pub(crate) mod script;
 pub(crate) mod source;

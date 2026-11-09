@@ -483,7 +483,12 @@ const KEYS: &[Key] = &[
     key(
         "labs.teleprompter_source",
         Kind::Choice(&["microphone", "system", "both"]),
-        "Labs › Teleprompter: what a session captions: the microphone (the default), the system audio (what plays through the speakers: calls, videos), or both mixed",
+        "Labs › Teleprompter: what a session captions: the microphone (the default), the system audio (what plays through the speakers: calls, videos), or both, each line under Me or Others",
+    ),
+    key(
+        "labs.interview",
+        Kind::Bool,
+        "Labs: Teleprompter opens an interview script by sections, with your CV, the offer, and company notes (Linux, Windows)",
     ),
     key(
         "labs.teleprompter",
