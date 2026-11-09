@@ -481,6 +481,11 @@ const KEYS: &[Key] = &[
         "Labs: while a meeting records, its transcript in Meetings scrolls to the newest line; scroll up to read earlier text, back to the bottom to follow again",
     ),
     key(
+        "labs.teleprompter_source",
+        Kind::Choice(&["microphone", "system", "both"]),
+        "Labs › Teleprompter: what a session captions: the microphone (the default), the system audio (what plays through the speakers: calls, videos), or both mixed",
+    ),
+    key(
         "labs.teleprompter",
         Kind::Bool,
         "Labs: hex teleprompter start, stop, and status transcribe the microphone live (Linux, Windows)",

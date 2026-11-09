@@ -1157,6 +1157,8 @@ const TRANSLATIONS: &[(&str, &str)] = &[
     ("Settings search", "Pesquisa em Ajustes"),
     ("Find any setting in General with a search field", "Encontre qualquer ajuste na seção Geral com um campo de pesquisa"),
     ("Couldn't save it: {}", "Não foi possível salvar: {}"),
+    ("System audio", "Áudio do sistema"),
+    ("Both", "Ambos"),
     ("Saved to {}", "Salvo em {}"),
     ("Save as .srt", "Salvar como .srt"),
     ("Save as .txt", "Salvar como .txt"),

@@ -26,6 +26,8 @@ const FINAL_PENDING_FILE: &str = "final.pending";
 const IMPORT_PENDING_FILE: &str = "import.pending";
 
 mod capture;
+#[cfg_attr(target_os = "macos", allow(unused_imports))]
+pub(crate) use capture::{SystemAudio, system_audio};
 mod chapters;
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub(crate) mod detection;

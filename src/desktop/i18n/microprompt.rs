@@ -5,6 +5,8 @@
 
 #[rustfmt::skip]
 pub(super) const TRANSLATIONS: &[(&str, [&str; 6])] = &[
+    ("System audio", ["Dźwięk systemowy", "系统音频", "システムオーディオ", "Systemaudio", "Audio del sistema", "Системний звук"]),
+    ("Both", ["Oba", "两者", "両方", "Beides", "Ambos", "Обидва"]),
     ("Couldn't save it: {}", ["Nie udało się zapisać: {}", "无法保存：{}", "保存できませんでした：{}", "Speichern fehlgeschlagen: {}", "No se pudo guardar: {}", "Не вдалося зберегти: {}"]),
     ("Saved to {}", ["Zapisano w {}", "已保存到 {}", "{} に保存しました", "Gesichert unter {}", "Guardado en {}", "Збережено в {}"]),
     ("Save as .srt", ["Zapisz jako .srt", "存为 .srt", ".srt で保存", "Als .srt sichern", "Guardar como .srt", "Зберегти як .srt"]),

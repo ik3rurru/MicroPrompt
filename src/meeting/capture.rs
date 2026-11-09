@@ -408,6 +408,51 @@ impl LiveSource for MicrophoneSource {
     }
 }
 
+/// MicroPrompt: a meeting's system audio source alone, for the Teleprompter
+/// (`crate::teleprompter::source`). It heals as a meeting's does; dropping it
+/// stops the source.
+#[cfg_attr(target_os = "macos", allow(dead_code))]
+pub(crate) struct SystemAudio {
+    supervisor: Option<SourceSupervisor>,
+    forward: Option<JoinHandle<()>>,
+}
+
+/// Starts the system audio source, handing each block (mono samples and
+/// their rate) to `deliver` on a thread of its own.
+#[cfg_attr(target_os = "macos", allow(dead_code))]
+pub(crate) fn system_audio(
+    deliver: impl Fn(Vec<f32>, u32) + Send + 'static,
+) -> std::io::Result<SystemAudio> {
+    let (sender, packets) = std::sync::mpsc::sync_channel::<AudioPacket>(128);
+    let forward = thread::Builder::new()
+        .name("system-audio".into())
+        .spawn(move || {
+            for packet in packets {
+                deliver(packet.samples, packet.sample_rate);
+            }
+        })?;
+    let supervisor = SourceSupervisor::system(PacketSink {
+        source: MeetingSource::System,
+        sender,
+        drops: Arc::default(),
+        clock: Instant::now(),
+    });
+    Ok(SystemAudio {
+        supervisor: Some(supervisor),
+        forward: Some(forward),
+    })
+}
+
+impl Drop for SystemAudio {
+    fn drop(&mut self) {
+        // The source's sink goes with its thread, which ends the forwarder.
+        drop(self.supervisor.take());
+        if let Some(forward) = self.forward.take() {
+            let _ = forward.join();
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

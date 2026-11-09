@@ -39,7 +39,7 @@ pub(in crate::rune_ui) fn pane(ui: &Ui, p: Paint) -> (Vec<El>, El) {
     // Windows registers its own shortcut; elsewhere a desktop keybinding runs
     // `hex teleprompter toggle`. Hidden while a session runs: only its text.
     if !cfg!(target_os = "windows") || view.running {
-        return (vec![control(p, view)], body);
+        return (actions(ui, p, view), body);
     }
     let rows = crate::rune_ui::general::shortcut_rows(
         ui,
@@ -56,7 +56,7 @@ pub(in crate::rune_ui) fn pane(ui: &Ui, p: Paint) -> (Vec<El>, El) {
         .pb(METRICS.section_gap)
         .child(card(p, "shortcut", rows));
     (
-        vec![control(p, view)],
+        actions(ui, p, view),
         col()
             .key("teleprompter-page")
             .grow(1.0)
@@ -162,4 +162,29 @@ fn body(p: Paint, view: &View) -> El {
             lines,
             true,
         ))
+}
+
+/// The session's button, after what it captions while none runs
+/// (`labs.teleprompter_source`, kept for the next session).
+fn actions(ui: &Ui, p: Paint, view: &View) -> Vec<El> {
+    use crate::teleprompter::source::Source;
+    if view.running {
+        return vec![control(p, view)];
+    }
+    let labels = [tr("Microphone"), tr("System audio"), tr("Both")];
+    let selected = Source::ALL
+        .iter()
+        .position(|source| *source == ui.settings.labs.teleprompter_source)
+        .unwrap_or(0);
+    let source = crate::rune_ui::controls::segmented(
+        p,
+        "teleprompter-source",
+        &labels,
+        selected,
+        |ui, index| {
+            let source = Source::ALL[index];
+            ui.update(|settings| settings.labs.teleprompter_source = source);
+        },
+    );
+    vec![source, control(p, view)]
 }

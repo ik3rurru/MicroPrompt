@@ -20,6 +20,7 @@ use crate::history::{HistoryDraft, HistoryEntry, HistoryKind, HistorySegment};
 
 #[cfg(target_os = "windows")]
 pub(crate) mod hotkey;
+pub(crate) mod source;
 use crate::transcription::stream::{End, Event, SAMPLE_RATE, SampleFormat, Stream, Streams};
 
 /// Microphone chunks (10 ms each) waiting for the pump: about 5 s. Past it a
@@ -265,13 +266,20 @@ fn start() -> ControlReply {
             return ControlReply::error("failed", format!("couldn't start: {error}"));
         }
     };
+    let microphone = match source::connect(sender) {
+        Ok(microphone) => microphone,
+        Err(error) => {
+            stream.cancel();
+            return ControlReply::error("failed", error);
+        }
+    };
     update(|live| {
         let generation = live.view.generation;
         *live = Live::new();
         live.view.running = true;
         live.view.generation = generation;
     });
-    *lock(&TAP) = Some(sender);
+    *lock(&TAP) = microphone;
     *session = Some(Session {
         stream,
         started: Instant::now(),
@@ -296,6 +304,7 @@ fn stop() -> ControlReply {
     update(|live| live.view.stopping = true);
     // The pump sends what it already took, then ends with the tap.
     *lock(&TAP) = None;
+    source::disconnect();
     let _ = session.pump.join();
     let end = session.stream.finish(FINISH_WAIT, &|| false);
     if end.is_none() {
