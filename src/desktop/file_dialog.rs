@@ -74,6 +74,7 @@ fn channel(wake: impl Fn() + Send + 'static) -> (Reply, Pending) {
 }
 
 /// An open dialog's answer, polled from the window.
+#[derive(Debug)]
 pub(crate) struct Pending(Receiver<Choice>);
 
 impl Pending {

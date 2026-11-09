@@ -11,6 +11,7 @@ mod group;
 mod screenshots;
 mod store;
 pub(super) mod teleprompter;
+pub(super) mod teleprompter_script;
 
 use rune::{El, Icon, TextEdit, Tx, row, text};
 

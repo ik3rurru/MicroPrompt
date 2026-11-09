@@ -20,6 +20,7 @@ use crate::history::{HistoryDraft, HistoryEntry, HistoryKind, HistorySegment};
 
 #[cfg(target_os = "windows")]
 pub(crate) mod hotkey;
+pub(crate) mod script;
 use crate::transcription::stream::{End, Event, SAMPLE_RATE, SampleFormat, Stream, Streams};
 
 /// Microphone chunks (10 ms each) waiting for the pump: about 5 s. Past it a

@@ -25,9 +25,10 @@ pub(in crate::rune_ui) fn shown(ui: &Ui) -> bool {
 /// Copies the session in when it changed (the host's poll, every frame;
 /// the session wakes the window on each change). True when it did.
 pub(in crate::rune_ui) fn poll(state: &mut PlatformState) -> bool {
+    let script = super::teleprompter_script::poll(state);
     let generation = crate::teleprompter::generation();
     if generation == state.teleprompter.generation {
-        return false;
+        return script;
     }
     state.teleprompter = crate::teleprompter::view();
     true
@@ -35,11 +36,12 @@ pub(in crate::rune_ui) fn poll(state: &mut PlatformState) -> bool {
 
 pub(in crate::rune_ui) fn pane(ui: &Ui, p: Paint) -> (Vec<El>, El) {
     let view = &ui.platform.teleprompter;
-    let body = body(p, view);
+    let body = super::teleprompter_script::view(ui, p).unwrap_or_else(|| body(p, view));
+    let script = super::teleprompter_script::button_for(ui, p);
     // Windows registers its own shortcut; elsewhere a desktop keybinding runs
     // `hex teleprompter toggle`. Hidden while a session runs: only its text.
     if !cfg!(target_os = "windows") || view.running {
-        return (vec![control(p, view)], body);
+        return (vec![script, control(p, view)], body);
     }
     let rows = crate::rune_ui::general::shortcut_rows(
         ui,
@@ -56,7 +58,7 @@ pub(in crate::rune_ui) fn pane(ui: &Ui, p: Paint) -> (Vec<El>, El) {
         .pb(METRICS.section_gap)
         .child(card(p, "shortcut", rows));
     (
-        vec![control(p, view)],
+        vec![script, control(p, view)],
         col()
             .key("teleprompter-page")
             .grow(1.0)

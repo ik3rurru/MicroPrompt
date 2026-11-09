@@ -6,6 +6,11 @@
 #[rustfmt::skip]
 pub(super) const TRANSLATIONS: &[(&str, [&str; 6])] = &[
     ("Couldn't save it: {}", ["Nie udało się zapisać: {}", "无法保存：{}", "保存できませんでした：{}", "Speichern fehlgeschlagen: {}", "No se pudo guardar: {}", "Не вдалося зберегти: {}"]),
+    ("Open script…", ["Otwórz scenariusz…", "打开讲稿…", "原稿を開く…", "Skript öffnen…", "Abrir guion…", "Відкрити сценарій…"]),
+    ("Open script", ["Otwórz scenariusz", "打开讲稿", "原稿を開く", "Skript öffnen", "Abrir guion", "Відкрити сценарій"]),
+    ("Close script", ["Zamknij scenariusz", "关闭讲稿", "原稿を閉じる", "Skript schließen", "Cerrar guion", "Закрити сценарій"]),
+    ("Scripts", ["Scenariusze", "讲稿", "原稿", "Skripte", "Guiones", "Сценарії"]),
+    ("Couldn't open it: {}", ["Nie udało się otworzyć: {}", "无法打开：{}", "開けませんでした：{}", "Öffnen fehlgeschlagen: {}", "No se pudo abrir: {}", "Не вдалося відкрити: {}"]),
     ("Saved to {}", ["Zapisano w {}", "已保存到 {}", "{} に保存しました", "Gesichert unter {}", "Guardado en {}", "Збережено в {}"]),
     ("Save as .srt", ["Zapisz jako .srt", "存为 .srt", ".srt で保存", "Als .srt sichern", "Guardar como .srt", "Зберегти як .srt"]),
     ("Save as .txt", ["Zapisz jako .txt", "存为 .txt", ".txt で保存", "Als .txt sichern", "Guardar como .txt", "Зберегти як .txt"]),
