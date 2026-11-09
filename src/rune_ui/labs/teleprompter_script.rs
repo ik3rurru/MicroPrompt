@@ -6,17 +6,38 @@
 use std::sync::Arc;
 
 use rune::{El, TextStyle, col, text};
+use rune_kit::{Markdown, MarkdownStyle};
 
 use crate::desktop::file_dialog::{Dialog, Filter, Pending, Target};
 use crate::desktop::i18n::{tr, tr_fill};
 use crate::rune_ui::controls::{ButtonKind, METRICS, Paint, button};
 use crate::rune_ui::platform::PlatformState;
 use crate::rune_ui::{Ui, list_detail};
-use crate::teleprompter::script::{Block, Script};
+use crate::teleprompter::script::Script;
 
 /// Read from a distance: larger than the live captions.
 const BODY: TextStyle = TextStyle::new(30.0, 450.0).lh(44.0);
-const HEADING: TextStyle = TextStyle::new(36.0, 650.0).lh(48.0);
+const HEADINGS: [TextStyle; 3] = [
+    TextStyle::new(44.0, 700.0).lh(56.0),
+    TextStyle::new(38.0, 650.0).lh(50.0),
+    TextStyle::new(33.0, 650.0).lh(46.0),
+];
+
+/// rune-kit's Markdown look, scaled up to the script's type.
+fn style(p: Paint) -> MarkdownStyle {
+    let style = MarkdownStyle::from_kit(p.k)
+        .body_font(BODY)
+        .code_block_font(TextStyle {
+            size: 24.0,
+            line_height: 36.0,
+            ..p.k.ty.mono
+        })
+        .code_block_padding(20.0, 14.0)
+        .list(36.0, 12.0);
+    (1..=3).fold(style, |style, level| {
+        style.heading_font(level, HEADINGS[usize::from(level) - 1])
+    })
+}
 
 #[derive(Clone, Debug, Default)]
 pub(in crate::rune_ui) struct ScriptPane {
@@ -98,20 +119,23 @@ pub(in crate::rune_ui) fn view(ui: &Ui, p: Paint) -> Option<El> {
                 .font(p.k.ty.ui)
                 .color(p.faint()),
         );
-    for (index, block) in script.blocks.iter().enumerate() {
-        let (words, font, indent) = match block {
-            Block::Heading(words) => (words.clone(), HEADING, 0.0),
-            Block::Paragraph(words) => (words.clone(), BODY, 0.0),
-            Block::Item { marker, text } => (format!("{marker} {text}"), BODY, 24.0),
-        };
+    if script.markdown {
         lines = lines.child(
-            text(words)
-                .key(format!("script-{index}"))
-                .font(font)
-                .color(p.text())
-                .wrap()
-                .pl(indent),
+            Markdown::new(script.text.clone())
+                .style(style(p))
+                .build(p.k)
+                .key("script-markdown"),
         );
+    } else {
+        for (index, paragraph) in script.paragraphs().enumerate() {
+            lines = lines.child(
+                text(paragraph)
+                    .key(format!("script-{index}"))
+                    .font(BODY)
+                    .color(p.text())
+                    .wrap(),
+            );
+        }
     }
     Some(
         col()

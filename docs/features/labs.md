@@ -41,7 +41,8 @@ Feature             Pane  Toggle (settings.json, hex settings)   On: what it doe
 │                                        (meeting::system_audio: WASAPI loopback, PipeWire monitor), both are mixed into one
 │                                        stream with no speakers told apart (src/teleprompter/source.rs; mix unit-tested only)
 │                                        Open script… shows a .txt or .md file in large type, scrolling, in place of the text until
-│                                        Close script; Markdown's marks drop (src/teleprompter/script.rs; scene teleprompter-script)
+│                                        Close script; Markdown draws formatted through rune-kit's `markdown` renderer: headings, emphasis,
+│                                        nested lists, quotes, code, tables (src/teleprompter/script.rs; scene teleprompter-script)
 │                                        Español | English beside Start (src/teleprompter/language.rs): the session's language
 │                                        for this run of Hex only, sent as the loaded model's language hint (no reload, Settings
 │                                        untouched; default English when dictation is English, else Spanish); a model without

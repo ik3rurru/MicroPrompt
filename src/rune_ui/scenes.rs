@@ -759,7 +759,8 @@ pub(super) const SCENES: &[Scene] = &[
         ui.pane = Pane::Teleprompter;
         ui.platform.teleprompter_script.script = Some(crate::teleprompter::script::Script {
             name: "Presentación.md".into(),
-            blocks: crate::teleprompter::script::parse(SCRIPT_FIXTURE, true),
+            text: SCRIPT_FIXTURE.into(),
+            markdown: true,
         });
     }),
     ("mac-activity", |ui| {
@@ -1038,10 +1039,21 @@ que levantábamos la vista, y el público lo notaba.
 - La letra tiene que ser grande.
 - Las frases cortas se leen mejor.
 - Hay que poder volver atrás sin perder el sitio.
+  - Con la rueda del ratón.
+  - Con `Re Pág` y `Av Pág`.
 
 1. Primero, preparar el texto.
 2. Después, ensayarlo en voz alta.
 3. Por último, leerlo con calma.
+
+| Ensayo | Minutos | Errores |
+|--------|--------:|--------:|
+| Lunes  | 12      | 5       |
+| Jueves | 9       | 1       |
+
+```
+hex teleprompter start
+```
 
 ---
 
