@@ -40,6 +40,8 @@ Feature             Pane  Toggle (settings.json, hex settings)   On: what it doe
 │                                        what a session captions, saved for the next; system audio is the meetings' source
 │                                        (meeting::system_audio: WASAPI loopback, PipeWire monitor), both are mixed into one
 │                                        stream with no speakers told apart (src/teleprompter/source.rs; mix unit-tested only)
+│                                        Open script… shows a .txt or .md file in large type, scrolling, in place of the text until
+│                                        Close script; Markdown's marks drop (src/teleprompter/script.rs; scene teleprompter-script)
 ├── Live chapters   no    labs.live_chapters           (macOS)   chapters a meeting while it records, boundary pass after Stop
 ├── Vocabulary biasing no labs.vocabulary_biasing                Parakeet transcription biased toward the vocabulary (#452/#457)
 ├── Switch model with keyboard language  no  keyboard_model_switching.enabled  (macOS, Windows, X11)

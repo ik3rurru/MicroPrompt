@@ -750,6 +750,18 @@ pub(super) const SCENES: &[Scene] = &[
             .ok();
         ui.pane = Pane::Teleprompter;
     }),
+    // MicroPrompt: a multi-page Markdown script, opened to read.
+    ("teleprompter-script", |ui| {
+        *ui = fixture(DesktopShortcuts::Registered);
+        ui.platform = platform::PlatformState::preview(platform::Capabilities::WINDOWS);
+        ui.host = platform::PlatformHost::Fixture(Vec::new());
+        ui.settings.labs.teleprompter = true;
+        ui.pane = Pane::Teleprompter;
+        ui.platform.teleprompter_script.script = Some(crate::teleprompter::script::Script {
+            name: "Presentación.md".into(),
+            blocks: crate::teleprompter::script::parse(SCRIPT_FIXTURE, true),
+        });
+    }),
     ("mac-activity", |ui| {
         *ui = mac_fixture();
         ui.platform.developer = true;
@@ -1007,3 +1019,43 @@ fn labs_with_some_on(ui: &mut Ui) {
     }
     ui.labs_open = true;
 }
+
+/// The `teleprompter-script` scene's script: several pages of Markdown.
+const SCRIPT_FIXTURE: &str = "# Bienvenida
+
+Buenos días a **todos** y gracias por venir. Hoy os quiero contar
+cómo hemos llegado hasta aquí y qué viene *después*.
+
+## Por qué empezamos
+
+Hace un año leíamos los discursos en papel. Perdíamos el hilo cada vez
+que levantábamos la vista, y el público lo notaba.
+
+> Un buen guion se lee sin que se note que lo estás leyendo.
+
+## Lo que hemos aprendido
+
+- La letra tiene que ser grande.
+- Las frases cortas se leen mejor.
+- Hay que poder volver atrás sin perder el sitio.
+
+1. Primero, preparar el texto.
+2. Después, ensayarlo en voz alta.
+3. Por último, leerlo con calma.
+
+---
+
+## Lo que viene
+
+El siguiente paso es que el guion siga tu voz: mientras hablas, la línea
+que estás leyendo se queda en el centro de la pantalla y el resto sube a
+su ritmo, sin tocar nada.
+
+Queremos que funcione en local, sin enviar el audio a ningún sitio, y
+que tarde lo menos posible en reaccionar.
+
+## Cierre
+
+Gracias por escucharme. Si tenéis preguntas, este es un buen momento
+para hacerlas; y si no, nos vemos en la próxima reunión.
+";
