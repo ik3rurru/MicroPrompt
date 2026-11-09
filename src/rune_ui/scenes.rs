@@ -736,6 +736,28 @@ pub(super) const SCENES: &[Scene] = &[
             ..Default::default()
         };
     }),
+    // MicroPrompt: a call heard from both sources, each turn named.
+    ("teleprompter-speakers", |ui| {
+        use crate::teleprompter::source::Speaker::{Me, Others};
+        *ui = fixture(DesktopShortcuts::Registered);
+        ui.platform = platform::PlatformState::preview(platform::Capabilities::WINDOWS);
+        ui.host = platform::PlatformHost::Fixture(Vec::new());
+        ui.settings.labs.teleprompter = true;
+        ui.pane = Pane::Teleprompter;
+        ui.platform.teleprompter = crate::teleprompter::View {
+            running: true,
+            segments: vec![
+                "Gracias por venir. ¿Me cuentas un poco sobre ti?".into(),
+                "Claro. Llevo siete años en backend, sobre todo con Python y Go.".into(),
+                "Ahora lidero un equipo de cuatro personas.".into(),
+            ],
+            speakers: vec![Some(Others), Some(Me), Some(Me)],
+            speaker: Some(Others),
+            stable: "¿Y por qué quieres".into(),
+            tentative: " cambiar de".into(),
+            ..Default::default()
+        };
+    }),
     ("teleprompter-idle", |ui| {
         *ui = fixture(DesktopShortcuts::Registered);
         ui.platform = platform::PlatformState::preview(platform::Capabilities::WINDOWS);

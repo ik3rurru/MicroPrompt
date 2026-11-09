@@ -411,3 +411,14 @@ impl Stream {
         }
     }
 }
+
+#[test]
+fn a_cut_ends_the_window_where_it_was_asked() {
+    let engine = FakeEngine::default();
+    let streams = Streams::default();
+    let stream = create(&streams, &engine);
+    stream.push(&[0.0; 8_000]).unwrap();
+    stream.cut();
+    stream.push(&[0.0; 4_000]).unwrap();
+    assert_eq!(texts(&finish(&stream)), ["live 8000", "live 4000"]);
+}

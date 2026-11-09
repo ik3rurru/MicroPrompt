@@ -2,8 +2,11 @@
 //! (`labs.teleprompter_source`): the listener's microphone, the system
 //! audio (what plays through the outputs: calls, videos), heard through the
 //! meetings' source (`crate::meeting::system_audio`: WASAPI loopback on
-//! Windows, the default output's PipeWire monitor on Linux), or both mixed
-//! into the one stream. Voices are not told apart.
+//! Windows, the default output's PipeWire monitor on Linux), or both, taking
+//! turns in the one stream ([`Turns`]): the engine runs one live stream at a
+//! time, so while the system audio plays the session hears it alone, and the
+//! microphone otherwise. Each turn is a [`Speaker`], and what the speakers
+//! play never reaches the stream a second time through the microphone.
 
 use std::sync::Mutex;
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, SyncSender};
@@ -29,9 +32,34 @@ impl Source {
     pub const ALL: [Self; 3] = [Self::Microphone, Self::System, Self::Both];
 }
 
-/// 16 kHz samples of each side held back before mixing, so the system
+/// Whose words a line holds when a session hears both sources.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum Speaker {
+    /// The microphone.
+    Me,
+    /// The system audio.
+    Others,
+}
+
+/// 16 kHz samples of each side held back before taking turns, so the system
 /// audio's blocks (about 100 ms) line up with the microphone's 10 ms ones.
 const MIX_HOLD: usize = SAMPLE_RATE / 5;
+/// The turns are decided per frame of 20 ms.
+const FRAME: usize = SAMPLE_RATE / 50;
+/// The microphone runs this far behind the system audio, so a block of
+/// system audio is seen before the microphone's echo of it.
+const MICROPHONE_DELAY: usize = SAMPLE_RATE / 4;
+/// How long the others keep the turn after the system audio's last sound:
+/// the microphone's delay, the hold's slack, and the room's echo.
+// ponytail: fixed times and levels; an answer begun within a quarter second
+// of the others' last word loses its start, and words said over the others
+// are not heard. Arrival timestamps per block and Hex's meeting echo model
+// (`meeting/echo`) if it matters.
+const OTHERS_TAIL: usize = MICROPHONE_DELAY + MIX_HOLD + SAMPLE_RATE / 4;
+/// A frame's RMS above which the system audio plays (about -54 dBFS) and
+/// the microphone hears a voice (about -48 dBFS).
+const PLAYING: f32 = 0.002;
+const SPEAKING: f32 = 0.004;
 
 /// The running session's system audio and mixer.
 struct Running {
@@ -53,7 +81,7 @@ pub(super) fn connect(pump: SyncSender<Chunk>) -> Result<Option<SyncSender<Chunk
         Source::Microphone => (Some(pump), None, None),
         Source::System => {
             let system = crate::meeting::system_audio(move |samples, rate| {
-                let _ = pump.try_send((samples, rate));
+                let _ = pump.try_send((samples, rate, None));
             });
             (None, Some(system), None)
         }
@@ -62,10 +90,10 @@ pub(super) fn connect(pump: SyncSender<Chunk>) -> Result<Option<SyncSender<Chunk
             let (system, played) = mpsc::sync_channel(TAP_CHUNKS);
             let mixer = thread::Builder::new()
                 .name("teleprompter-mixer".into())
-                .spawn(move || mix_into(&pump, &heard, &played))
+                .spawn(move || take_turns_into(&pump, &heard, &played))
                 .map_err(|error| format!("couldn't start: {error}"))?;
             let system = crate::meeting::system_audio(move |samples, rate| {
-                let _ = system.try_send((samples, rate));
+                let _ = system.try_send((samples, rate, None));
             });
             (Some(microphone), Some(system), Some(mixer))
         }
@@ -89,11 +117,15 @@ pub(super) fn disconnect() {
     }
 }
 
-/// Mixes the microphone's chunks with the system audio's into 16 kHz chunks
-/// for the pump, until the microphone's sender closes.
-fn mix_into(pump: &SyncSender<Chunk>, heard: &Receiver<Chunk>, played: &Receiver<Chunk>) {
-    let mut microphone = Side::default();
+/// Hands the pump 16 kHz chunks of whoever has the turn, the microphone's
+/// audio or the system's, until the microphone's sender closes.
+fn take_turns_into(pump: &SyncSender<Chunk>, heard: &Receiver<Chunk>, played: &Receiver<Chunk>) {
+    let mut microphone = Side {
+        pending: vec![0.0; MICROPHONE_DELAY],
+        ..Side::default()
+    };
     let mut system = Side::default();
+    let mut turns = Turns::default();
     loop {
         let open = match heard.recv_timeout(Duration::from_millis(20)) {
             Ok(chunk) => {
@@ -107,9 +139,10 @@ fn mix_into(pump: &SyncSender<Chunk>, heard: &Receiver<Chunk>, played: &Receiver
             system.push(chunk);
         }
         let hold = if open { MIX_HOLD } else { 0 };
-        let mixed = mix(&mut microphone.pending, &mut system.pending, hold);
-        if !mixed.is_empty() && pump.send((mixed, SAMPLE_RATE as u32)).is_err() {
-            return;
+        for (samples, speaker) in turns.take(&mut microphone.pending, &mut system.pending, hold) {
+            if pump.send((samples, SAMPLE_RATE as u32, speaker)).is_err() {
+                return;
+            }
         }
         if !open {
             return;
@@ -117,7 +150,7 @@ fn mix_into(pump: &SyncSender<Chunk>, heard: &Receiver<Chunk>, played: &Receiver
     }
 }
 
-/// One side's audio, at 16 kHz, not yet mixed.
+/// One side's audio, at 16 kHz, waiting for its turn.
 #[derive(Default)]
 struct Side {
     resampler: Option<(u32, crate::dictation::StreamingResampler)>,
@@ -125,7 +158,7 @@ struct Side {
 }
 
 impl Side {
-    fn push(&mut self, (samples, rate): Chunk) {
+    fn push(&mut self, (samples, rate, _): Chunk) {
         if self.resampler.as_ref().is_none_or(|(at, _)| *at != rate) {
             match crate::dictation::StreamingResampler::new(rate) {
                 Ok(new) => self.resampler = Some((rate, new)),
@@ -141,22 +174,63 @@ impl Side {
     }
 }
 
-/// Adds both sides up to the longer one's length less `hold`, clamped,
-/// leaving the rest for the next call. A side that delivered nothing (the
-/// loopback while nothing plays) adds nothing.
-fn mix(a: &mut Vec<f32>, b: &mut Vec<f32>, hold: usize) -> Vec<f32> {
-    let length = a.len().max(b.len()).saturating_sub(hold);
-    let mut mixed = vec![0.0f32; length];
-    for side in [a, b] {
-        let take = side.len().min(length);
-        for (out, sample) in mixed.iter_mut().zip(side.drain(..take)) {
-            *out += sample;
+/// Who has the turn, frame by frame.
+#[derive(Default)]
+struct Turns {
+    /// Samples handed on so far.
+    position: usize,
+    /// The others keep the turn until here.
+    others_until: usize,
+    /// Who spoke last; a quiet frame changes nothing.
+    speaker: Option<Speaker>,
+}
+
+impl Turns {
+    /// Takes both sides' whole frames up to the longer one's length less
+    /// `hold`, leaving the rest for the next call, and returns one side's
+    /// audio per frame as runs of one speaker: the system audio while it
+    /// plays and for [`OTHERS_TAIL`] after, else the microphone. A side that
+    /// delivered nothing (the loopback while nothing plays) is silent.
+    fn take(
+        &mut self,
+        microphone: &mut Vec<f32>,
+        system: &mut Vec<f32>,
+        hold: usize,
+    ) -> Vec<(Vec<f32>, Option<Speaker>)> {
+        let frames = microphone.len().max(system.len()).saturating_sub(hold) / FRAME;
+        let mut runs: Vec<(Vec<f32>, Option<Speaker>)> = Vec::new();
+        for _ in 0..frames {
+            let played: Vec<f32> = system.drain(..FRAME.min(system.len())).collect();
+            let heard: Vec<f32> = microphone.drain(..FRAME.min(microphone.len())).collect();
+            if level(&played) > PLAYING {
+                self.others_until = self.position + OTHERS_TAIL;
+            }
+            let mut frame = if self.position < self.others_until {
+                self.speaker = Some(Speaker::Others);
+                played
+            } else {
+                if level(&heard) > SPEAKING {
+                    self.speaker = Some(Speaker::Me);
+                }
+                heard
+            };
+            frame.resize(FRAME, 0.0);
+            self.position += FRAME;
+            match runs.last_mut() {
+                Some((run, speaker)) if *speaker == self.speaker => run.extend(frame),
+                _ => runs.push((frame, self.speaker)),
+            }
         }
+        runs
     }
-    for sample in &mut mixed {
-        *sample = sample.clamp(-1.0, 1.0);
+}
+
+/// A frame's RMS; nothing is silence.
+fn level(frame: &[f32]) -> f32 {
+    if frame.is_empty() {
+        return 0.0;
     }
-    mixed
+    (frame.iter().map(|sample| sample * sample).sum::<f32>() / frame.len() as f32).sqrt()
 }
 
 #[cfg(test)]
@@ -164,16 +238,37 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_sides_add_up_and_a_silent_one_adds_nothing() {
-        // Only the microphone: its audio, less the hold.
-        let (mut microphone, mut system) = (vec![0.25; 10], Vec::new());
-        assert_eq!(mix(&mut microphone, &mut system, 4), vec![0.25; 6]);
-        assert_eq!(microphone.len(), 4);
-
-        // Both: sample by sample, clamped.
-        let (mut microphone, mut system) = (vec![0.5; 8], vec![0.75; 6]);
-        assert_eq!(mix(&mut microphone, &mut system, 2), vec![1.0; 6]);
-        assert_eq!((microphone.len(), system.len()), (2, 0));
+    fn the_sides_take_turns_and_the_echo_is_not_heard() {
+        let second = SAMPLE_RATE;
+        let mut turns = Turns::default();
+        // I speak for a second: my turn, my audio.
+        let (mut microphone, mut system) = (vec![0.1; second], Vec::new());
+        assert_eq!(
+            turns.take(&mut microphone, &mut system, 0),
+            [(vec![0.1; second], Some(Speaker::Me))]
+        );
+        // The others speak and the microphone hears them, quieter and for
+        // longer: their turn, the system audio alone, through the echo.
+        let (mut microphone, mut system) =
+            (vec![0.05; second + OTHERS_TAIL - FRAME], vec![0.2; second]);
+        let mut theirs = vec![0.2; second];
+        theirs.resize(second + OTHERS_TAIL - FRAME, 0.0);
+        assert_eq!(
+            turns.take(&mut microphone, &mut system, 0),
+            [(theirs, Some(Speaker::Others))]
+        );
+        // Quiet keeps the last speaker; then I answer.
+        let (mut microphone, mut system) = (vec![0.0; FRAME], Vec::new());
+        assert_eq!(
+            turns.take(&mut microphone, &mut system, 0),
+            [(vec![0.0; FRAME], Some(Speaker::Others))]
+        );
+        let (mut microphone, mut system) = (vec![0.1; FRAME * 3], Vec::new());
+        assert_eq!(
+            turns.take(&mut microphone, &mut system, FRAME),
+            [(vec![0.1; FRAME * 2], Some(Speaker::Me))]
+        );
+        assert_eq!(microphone.len(), FRAME);
     }
 
     #[test]

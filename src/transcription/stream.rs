@@ -368,6 +368,9 @@ struct State {
     /// Audio received and not yet transcribed (pending plus the worker's).
     backlog: usize,
     received: usize,
+    /// MicroPrompt: where ([`State::received`]) the pusher asked for the
+    /// window to end ([`Stream::cut`]).
+    cuts: VecDeque<usize>,
     finishing: bool,
     cancelled: bool,
     lease: Duration,
@@ -429,6 +432,15 @@ impl Stream {
         drop(state);
         self.shared.changed.notify_all();
         Ok(())
+    }
+
+    /// MicroPrompt: ends the window at the audio pushed so far, as a pause
+    /// would, so what is pushed next gets a segment of its own (the
+    /// Teleprompter's change of speaker).
+    pub(crate) fn cut(&self) {
+        let mut state = self.shared.lock();
+        let at = state.received;
+        state.cuts.push_back(at);
     }
 
     /// Renews the lease; `false` once the stream has ended.
@@ -597,6 +609,7 @@ impl Streams {
                 pending: VecDeque::new(),
                 backlog: 0,
                 received: 0,
+                cuts: VecDeque::new(),
                 finishing: false,
                 cancelled: false,
                 lease: self.lease,
@@ -760,12 +773,23 @@ impl<E: Engine> Worker<E> {
     fn take(&mut self, audio: &[f32]) -> Result<(), End> {
         for frame in audio.chunks(FRAME_SAMPLES) {
             self.window.audio.extend_from_slice(frame);
-            let cut = self.segmenter.push(frame).is_some();
+            let cut = self.segmenter.push(frame).is_some() | self.asked_to_cut();
             if cut || self.window.audio.len() >= MAX_WINDOW_SAMPLES {
                 self.close_window()?;
             }
         }
         Ok(())
+    }
+
+    /// Whether a [`Stream::cut`] falls within the audio taken so far.
+    fn asked_to_cut(&self) -> bool {
+        let taken = self.window.start + self.window.audio.len();
+        let mut state = self.shared.lock();
+        let before = state.cuts.len();
+        while state.cuts.front().is_some_and(|at| *at <= taken) {
+            state.cuts.pop_front();
+        }
+        state.cuts.len() < before
     }
 
     /// Sends the window's unsent audio to its live stream, opening one if

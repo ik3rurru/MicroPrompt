@@ -38,8 +38,12 @@ Feature             Pane  Toggle (settings.json, hex settings)   On: what it doe
 │                                        starts and stops it with the window closed; Linux binds `hex teleprompter toggle`
 │                                        labs.teleprompter_source (microphone default, system, both): the pane's header picks
 │                                        what a session captions, saved for the next; system audio is the meetings' source
-│                                        (meeting::system_audio: WASAPI loopback, PipeWire monitor), both are mixed into one
-│                                        stream with no speakers told apart (src/teleprompter/source.rs; mix unit-tested only)
+│                                        (meeting::system_audio: WASAPI loopback, PipeWire monitor); both take turns in the one
+│                                        stream (the engine runs one live stream): the system audio while it plays and 0.7 s after,
+│                                        else the microphone 0.25 s late, so the speakers' echo is never heard as yours; a change of
+│                                        speaker ends the segment (Stream::cut) and lines read under Me / Others, in History too
+│                                        (src/teleprompter/source.rs; scene teleprompter-speakers; turns and cut unit-tested only,
+│                                        no call measured; words said over the others are lost)
 │                                        Open script… shows a .txt or .md file in large type, scrolling, in place of the text until
 │                                        Close script; Markdown draws formatted through rune-kit's `markdown` renderer: headings, emphasis,
 │                                        nested lists, quotes, code, tables, block by block in a centred reading column (src/teleprompter/script.rs;

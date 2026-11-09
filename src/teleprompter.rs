@@ -24,6 +24,7 @@ pub(crate) mod language;
 pub(crate) mod script;
 pub(crate) mod source;
 use crate::transcription::stream::{End, Event, SAMPLE_RATE, SampleFormat, Stream, Streams};
+use source::Speaker;
 
 /// Microphone chunks (10 ms each) waiting for the pump: about 5 s. Past it a
 /// chunk is dropped rather than block the listener's loop.
@@ -31,8 +32,9 @@ const TAP_CHUNKS: usize = 500;
 /// How long `stop` waits for the last window's text.
 const FINISH_WAIT: Duration = Duration::from_secs(15);
 
-/// A microphone chunk and its sample rate.
-type Chunk = (Vec<f32>, u32);
+/// A chunk of audio, its sample rate, and whose turn it is when the session
+/// hears both sources ([`source::Speaker`]).
+type Chunk = (Vec<f32>, u32, Option<Speaker>);
 
 static TAP: Mutex<Option<SyncSender<Chunk>>> = Mutex::new(None);
 static SESSION: Mutex<Option<Session>> = Mutex::new(None);
@@ -51,7 +53,7 @@ pub(crate) fn feed(samples: &[f32], sample_rate: u32) {
     let Some(sender) = tap.as_ref() else {
         return;
     };
-    match sender.try_send((samples.to_vec(), sample_rate)) {
+    match sender.try_send((samples.to_vec(), sample_rate, None)) {
         Ok(()) => {}
         // ponytail: a stalled pump loses audio; a gap marker if it matters.
         Err(TrySendError::Full(_)) => tracing::warn!("teleprompter is behind; dropping audio"),
@@ -81,6 +83,10 @@ pub(crate) struct View {
     pub(crate) stopping: bool,
     /// Closed segments, oldest first.
     pub(crate) segments: Vec<String>,
+    /// Who said each segment, when the session hears both sources.
+    pub(crate) speakers: Vec<Option<Speaker>>,
+    /// Who is saying the open segment.
+    pub(crate) speaker: Option<Speaker>,
     /// The open segment: committed words, then the model's guess.
     pub(crate) stable: String,
     pub(crate) tentative: String,
@@ -99,6 +105,8 @@ struct Live {
     partials: Vec<Instant>,
     /// Audio sent past each segment's end when its final text arrived.
     behind_ms: Vec<u64>,
+    /// Each change of speaker and the audio sent when it came.
+    turns: Vec<(u64, Speaker)>,
 }
 
 impl Live {
@@ -108,6 +116,8 @@ impl Live {
                 running: false,
                 stopping: false,
                 segments: Vec::new(),
+                speakers: Vec::new(),
+                speaker: None,
                 stable: String::new(),
                 tentative: String::new(),
                 error: None,
@@ -116,6 +126,7 @@ impl Live {
             first_words_ms: None,
             partials: Vec::new(),
             behind_ms: Vec::new(),
+            turns: Vec::new(),
         }
     }
 
@@ -155,6 +166,24 @@ impl Live {
             ));
         }
         parts.join(", ")
+    }
+}
+
+/// Who spoke the segment from `start_ms` to `end_ms`: a change of speaker
+/// ends a segment, so its middle lies in one turn.
+fn speaker_at(turns: &[(u64, Speaker)], start_ms: u64, end_ms: u64) -> Option<Speaker> {
+    let middle = start_ms.midpoint(end_ms);
+    let turn = turns.iter().rfind(|(at, _)| *at <= middle);
+    turn.or(turns.first()).map(|(_, speaker)| *speaker)
+}
+
+/// "Me: …" or "Others: …" in the interface language, for History.
+fn labelled(speaker: Option<Speaker>, text: &str) -> String {
+    use crate::desktop::i18n::tr;
+    match speaker {
+        Some(Speaker::Me) => format!("{}: {text}", tr("Me")),
+        Some(Speaker::Others) => format!("{}: {text}", tr("Others")),
+        None => text.to_string(),
     }
 }
 
@@ -326,7 +355,7 @@ fn stop() -> ControlReply {
             segments,
             duration_ms,
         }) => {
-            let saved = keep(&text, &segments, duration_ms, session.model);
+            let saved = keep(&text, &segments, &live.turns, duration_ms, session.model);
             ControlReply::done(format!(
                 "Teleprompter stopped after {elapsed} s{saved}; {}\n{text}",
                 live.latency()
@@ -358,10 +387,12 @@ fn status() -> ControlReply {
 
 /// Resamples the tap's chunks to 16 kHz and pushes them, renewing the lease
 /// while the microphone is quiet, until the tap closes or the stream ends.
+/// A change of speaker ends the stream's window, so each segment is one's.
 fn pump(stream: &Stream, chunks: &Receiver<Chunk>, sent: &AtomicU64) {
     let mut resampler: Option<(u32, crate::dictation::StreamingResampler)> = None;
+    let mut turn = None;
     loop {
-        let (samples, rate) = match chunks.recv_timeout(Duration::from_secs(1)) {
+        let (samples, rate, speaker) = match chunks.recv_timeout(Duration::from_secs(1)) {
             Ok(chunk) => chunk,
             Err(RecvTimeoutError::Timeout) if stream.heartbeat() => continue,
             Err(_) => return,
@@ -379,6 +410,14 @@ fn pump(stream: &Stream, chunks: &Receiver<Chunk>, sent: &AtomicU64) {
             return;
         };
         let audio = resampler.push(&samples);
+        if let Some(speaker) = speaker.filter(|speaker| turn != Some(*speaker)) {
+            if turn.is_some() {
+                stream.cut();
+            }
+            turn = Some(speaker);
+            let at_ms = sent.load(Ordering::Relaxed) * 1000 / SAMPLE_RATE as u64;
+            lock(&LIVE).turns.push((at_ms, speaker));
+        }
         if stream.push(&audio).is_err() {
             return;
         }
@@ -404,6 +443,9 @@ fn read(stream: &Stream, sent: &AtomicU64) {
                         live.first_words_ms.get_or_insert_with(sent_ms);
                         live.partials.push(Instant::now());
                     }
+                    if old.trim().is_empty() {
+                        live.view.speaker = live.turns.last().map(|(_, speaker)| *speaker);
+                    }
                     live.view.stable = stable.clone();
                     live.view.tentative = tentative.clone();
                 }
@@ -419,6 +461,8 @@ fn read(stream: &Stream, sent: &AtomicU64) {
                     );
                     live.behind_ms.push(behind_ms);
                     live.view.segments.push(segment.text.clone());
+                    let speaker = speaker_at(&live.turns, segment.start_ms, segment.end_ms);
+                    live.view.speakers.push(speaker);
                     live.view.stable.clear();
                     live.view.tentative.clear();
                 }
@@ -433,20 +477,39 @@ fn read(stream: &Stream, sent: &AtomicU64) {
     );
 }
 
-/// Keeps a finished session in History; what the reply adds about it.
+/// Keeps a finished session in History, each line under its speaker's name
+/// when it has `turns`; what the reply adds about it.
 fn keep(
     text: &str,
     segments: &[crate::transcription::stream::Segment],
+    turns: &[(u64, Speaker)],
     duration_ms: u64,
     model: String,
 ) -> &'static str {
     if text.trim().is_empty() {
         return "";
     }
+    let segments = segments
+        .iter()
+        .map(|segment| HistorySegment {
+            start_ms: segment.start_ms,
+            end_ms: segment.end_ms,
+            text: labelled(
+                speaker_at(turns, segment.start_ms, segment.end_ms),
+                &segment.text,
+            ),
+        })
+        .collect::<Vec<_>>();
+    let final_text = if turns.is_empty() {
+        text.to_string()
+    } else {
+        let lines = segments.iter().map(|segment| segment.text.as_str());
+        lines.collect::<Vec<_>>().join("\n")
+    };
     let draft = HistoryDraft {
         kind: HistoryKind::Teleprompter,
         raw_text: text.to_string(),
-        final_text: text.to_string(),
+        final_text,
         application: None,
         processing: None,
         audio_ms: duration_ms,
@@ -455,14 +518,6 @@ fn keep(
         recording: None,
         model: Some(model),
     };
-    let segments = segments
-        .iter()
-        .map(|segment| HistorySegment {
-            start_ms: segment.start_ms,
-            end_ms: segment.end_ms,
-            text: segment.text.clone(),
-        })
-        .collect();
     match history().map(|history| history.record_with(draft, segments)) {
         Some(Ok(Some(_))) => ", kept in History",
         Some(Ok(None)) => ", not kept: History is off",
@@ -546,6 +601,17 @@ mod tests {
         assert_eq!(live.text(), "Hola. Esto es. una prueba");
         assert_eq!(median(vec![300, 100, 200]), Some(200));
         assert_eq!(median(vec![]), None);
+    }
+
+    #[test]
+    fn a_segment_is_its_turns_speaker() {
+        assert_eq!(speaker_at(&[], 0, 1_000), None);
+        let turns = [(2_000, Speaker::Me), (5_000, Speaker::Others)];
+        // Silence before the first words belongs to who spoke them.
+        assert_eq!(speaker_at(&turns, 0, 3_000), Some(Speaker::Me));
+        assert_eq!(speaker_at(&turns, 2_000, 5_010), Some(Speaker::Me));
+        assert_eq!(speaker_at(&turns, 5_010, 9_000), Some(Speaker::Others));
+        assert_eq!(labelled(None, "Hola."), "Hola.");
     }
 
     #[test]

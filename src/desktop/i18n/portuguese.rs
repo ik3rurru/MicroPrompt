@@ -1159,6 +1159,8 @@ const TRANSLATIONS: &[(&str, &str)] = &[
     ("Couldn't save it: {}", "Não foi possível salvar: {}"),
     ("System audio", "Áudio do sistema"),
     ("Both", "Ambos"),
+    ("Me", "Eu"),
+    ("Others", "Os outros"),
     ("Open script…", "Abrir roteiro…"),
     ("Open script", "Abrir roteiro"),
     ("Close script", "Fechar roteiro"),

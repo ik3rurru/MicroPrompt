@@ -12,6 +12,7 @@ use crate::rune_ui::lists::placeholder;
 use crate::rune_ui::platform::PlatformState;
 use crate::rune_ui::{Tx, Ui, list_detail};
 use crate::teleprompter::View;
+use crate::teleprompter::source::Speaker;
 
 /// Subtitles read from across the room, not like a settings row.
 const CAPTION: TextStyle = TextStyle::new(26.0, 450.0).lh(36.0);
@@ -139,26 +140,39 @@ fn body(p: Paint, view: &View) -> El {
         .gap(14.0)
         .px(METRICS.gutter)
         .pb(16.0);
+    // With both sources, a line names its speaker when the turn changes.
+    let mut last = None;
+    let mut named = |line: El, key: String, speaker: Option<Speaker>| {
+        let Some(speaker) = speaker.filter(|speaker| last != Some(*speaker)) else {
+            return line;
+        };
+        last = Some(speaker);
+        let name = match speaker {
+            Speaker::Me => tr("Me"),
+            Speaker::Others => tr("Others"),
+        };
+        let name = text(name).font(p.k.ty.ui).color(p.faint());
+        col().key(key).gap(2.0).pt(6.0).child(name).child(line)
+    };
     for (index, segment) in view.segments.iter().enumerate() {
-        lines = lines.child(
-            text(segment.trim().to_owned())
-                .key(format!("segment-{index}"))
-                .font(CAPTION)
-                .color(p.text())
-                .wrap(),
-        );
+        let speaker = view.speakers.get(index).copied().flatten();
+        let line = text(segment.trim().to_owned())
+            .key(format!("segment-{index}"))
+            .font(CAPTION)
+            .color(p.text())
+            .wrap();
+        lines = lines.child(named(line, format!("speaker-{index}"), speaker));
     }
     if !open.trim().is_empty() {
         let stable = view.stable.trim_start();
         let words = format!("{stable}{}", view.tentative);
         let words = words.trim_end().to_owned();
         let faint = Span::new(stable.len().min(words.len()), words.len()).color(p.faint());
-        lines = lines.child(
-            rich(words, vec![faint])
-                .key("open-segment")
-                .font(CAPTION)
-                .color(p.text()),
-        );
+        let line = rich(words, vec![faint])
+            .key("open-segment")
+            .font(CAPTION)
+            .color(p.text());
+        lines = lines.child(named(line, "speaker-open".into(), view.speaker));
     }
     col()
         .key("teleprompter")
