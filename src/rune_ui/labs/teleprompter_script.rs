@@ -3,7 +3,7 @@
 //! it in large type, scrolling, in place of the live text until Close
 //! script.
 
-use std::sync::Arc;
+use std::rc::Rc;
 
 use rune::{El, TextStyle, col, text};
 use rune_kit::{Markdown, MarkdownStyle};
@@ -16,24 +16,41 @@ use crate::rune_ui::{Ui, list_detail};
 use crate::teleprompter::script::Script;
 
 /// Read from a distance: larger than the live captions.
-const BODY: TextStyle = TextStyle::new(30.0, 450.0).lh(44.0);
+const BODY: TextStyle = TextStyle::new(32.0, 450.0).lh(48.0);
 const HEADINGS: [TextStyle; 3] = [
-    TextStyle::new(44.0, 700.0).lh(56.0),
-    TextStyle::new(38.0, 650.0).lh(50.0),
-    TextStyle::new(33.0, 650.0).lh(46.0),
+    TextStyle::new(48.0, 700.0).lh(60.0),
+    TextStyle::new(40.0, 680.0).lh(52.0),
+    TextStyle::new(35.0, 650.0).lh(46.0),
 ];
+const TABLE: TextStyle = TextStyle::new(28.0, 450.0).lh(38.0);
+/// The column's widest: about 60 characters a line, easy to follow back.
+const MEASURE: f32 = 860.0;
+/// Between a script's blocks (rune-kit's margins suit small text), and more
+/// above a heading so each section reads as one.
+const BLOCK_GAP: f32 = 22.0;
+const SECTION_GAP: f32 = 30.0;
 
 /// rune-kit's Markdown look, scaled up to the script's type.
 fn style(p: Paint) -> MarkdownStyle {
+    let c = &p.k.c;
     let style = MarkdownStyle::from_kit(p.k)
         .body_font(BODY)
+        .strong_weight(720.0)
         .code_block_font(TextStyle {
-            size: 24.0,
-            line_height: 36.0,
+            size: 26.0,
+            line_height: 38.0,
             ..p.k.ty.mono
         })
-        .code_block_padding(20.0, 14.0)
-        .list(36.0, 12.0);
+        .code_block_padding(24.0, 18.0)
+        .inline_code_pad(6.0)
+        .list(44.0, 14.0)
+        .quote_rule(c.border_base)
+        .table_font(TABLE)
+        .table_cell_padding(24.0, 14.0)
+        .table_min_column(140.0)
+        .table_rules(c.border_base)
+        .table_header_weight(680.0)
+        .table_margin(0.0, 0.0);
     (1..=3).fold(style, |style, level| {
         style.heading_font(level, HEADINGS[usize::from(level) - 1])
     })
@@ -43,7 +60,7 @@ fn style(p: Paint) -> MarkdownStyle {
 pub(in crate::rune_ui) struct ScriptPane {
     pub(in crate::rune_ui) script: Option<Script>,
     /// The native file dialog, while it is open.
-    chooser: Option<Arc<Pending>>,
+    chooser: Option<Rc<Pending>>,
 }
 
 /// Open script…, or Close script while one shows.
@@ -71,7 +88,7 @@ fn choose(ui: &mut Ui) {
         return;
     }
     let waker = ui.modes.waker.clone();
-    ui.platform.teleprompter_script.chooser = Some(Arc::new(crate::desktop::file_dialog::open(
+    ui.platform.teleprompter_script.chooser = Some(Rc::new(crate::desktop::file_dialog::open(
         Dialog {
             title: tr("Open script").into(),
             target: Target::File(vec![Filter {
@@ -110,7 +127,10 @@ pub(in crate::rune_ui) fn view(ui: &Ui, p: Paint) -> Option<El> {
     let script = ui.platform.teleprompter_script.script.as_ref()?;
     let mut lines = col()
         .key("teleprompter-script-lines")
-        .gap(20.0)
+        .gap(BLOCK_GAP)
+        .w_full()
+        .max_w(MEASURE)
+        .self_center()
         .px(METRICS.gutter)
         .pb(48.0)
         .child(
@@ -120,12 +140,19 @@ pub(in crate::rune_ui) fn view(ui: &Ui, p: Paint) -> Option<El> {
                 .color(p.faint()),
         );
     if script.markdown {
-        lines = lines.child(
-            Markdown::new(script.text.clone())
-                .style(style(p))
-                .build(p.k)
-                .key("script-markdown"),
-        );
+        let style = style(p);
+        for (index, block) in script.blocks().into_iter().enumerate() {
+            lines = lines.child(
+                Markdown::new(block)
+                    .render(&style)
+                    .key(format!("script-{index}"))
+                    .pt(if index > 0 && block.starts_with('#') {
+                        SECTION_GAP
+                    } else {
+                        0.0
+                    }),
+            );
+        }
     } else {
         for (index, paragraph) in script.paragraphs().enumerate() {
             lines = lines.child(

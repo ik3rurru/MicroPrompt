@@ -39,6 +39,32 @@ impl Script {
         })
     }
 
+    /// A Markdown script's top-level blocks (a heading, a paragraph, a whole
+    /// list, a table…) as their source, so the pane spaces them for reading
+    /// at a distance: rune-kit's own margins are sized for small text.
+    pub(crate) fn blocks(&self) -> Vec<&str> {
+        use pulldown_cmark::{Event, Options, Parser};
+        let options =
+            Options::ENABLE_STRIKETHROUGH | Options::ENABLE_TABLES | Options::ENABLE_TASKLISTS;
+        let mut depth = 0usize;
+        let mut blocks = Vec::new();
+        for (event, range) in Parser::new_ext(&self.text, options).into_offset_iter() {
+            match event {
+                Event::Start(_) => {
+                    if depth == 0 {
+                        blocks.push(self.text[range].trim_end());
+                    }
+                    depth += 1;
+                }
+                Event::End(_) => depth -= 1,
+                // A rule or raw HTML is a block of its own with no Start.
+                _ if depth == 0 => blocks.push(self.text[range].trim_end()),
+                _ => {}
+            }
+        }
+        blocks
+    }
+
     /// A `.txt`'s paragraphs: blank lines end one, its lines flow together.
     pub(crate) fn paragraphs(&self) -> impl Iterator<Item = String> + '_ {
         self.text
@@ -61,6 +87,25 @@ mod tests {
         assert_eq!(
             script.paragraphs().collect::<Vec<_>>(),
             ["# 1 * 2 sigue", "- dos"]
+        );
+    }
+
+    #[test]
+    fn markdown_splits_into_top_level_blocks() {
+        let script = Script {
+            text: "# Hola\nTexto\nsigue\n\n- uno\n  - dos\n- tres\n\n---\n\n| a | b |\n|---|---|\n| 1 | 2 |\n".into(),
+            markdown: true,
+            ..Script::default()
+        };
+        assert_eq!(
+            script.blocks(),
+            [
+                "# Hola",
+                "Texto\nsigue",
+                "- uno\n  - dos\n- tres",
+                "---",
+                "| a | b |\n|---|---|\n| 1 | 2 |",
+            ]
         );
     }
 }

@@ -128,6 +128,8 @@ png = "0.18"
 procwatch = { git = "https://github.com/anomalyco/rune.git", rev = "a138b97e654b8299b2a4cb518b8476b2b528c2c4" }
 rune = { git = "https://github.com/anomalyco/rune.git", rev = "a138b97e654b8299b2a4cb518b8476b2b528c2c4", features = ["native-file-dialog", "macos-background-cursor"] }
 rune-kit = { git = "https://github.com/anomalyco/rune.git", rev = "a138b97e654b8299b2a4cb518b8476b2b528c2c4", features = ["markdown"] }
+# The Teleprompter splits a Markdown script into its blocks; rune-kit's `markdown` already builds it.
+pulldown-cmark = { version = "0.13", default-features = false }
 rune-theme-opencode = { git = "https://github.com/anomalyco/rune.git", rev = "a138b97e654b8299b2a4cb518b8476b2b528c2c4" }
 # The welcome hero's own GPU pass (`rune_ui::hero`); Rune's version.
 wgpu = { version = "30", default-features = false, features = ["std", "parking_lot", "metal", "wgsl"] }
