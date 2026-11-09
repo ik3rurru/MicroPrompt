@@ -42,6 +42,10 @@ Feature             Pane  Toggle (settings.json, hex settings)   On: what it doe
 │                                        stream with no speakers told apart (src/teleprompter/source.rs; mix unit-tested only)
 │                                        Open script… shows a .txt or .md file in large type, scrolling, in place of the text until
 │                                        Close script; Markdown's marks drop (src/teleprompter/script.rs; scene teleprompter-script)
+│                                        Español | English beside Start (src/teleprompter/language.rs): the session's language
+│                                        for this run of Hex only, sent as the loaded model's language hint (no reload, Settings
+│                                        untouched; default English when dictation is English, else Spanish); a model without
+│                                        it refuses to start and says so (Parakeet Unified English: no Spanish)
 ├── Live chapters   no    labs.live_chapters           (macOS)   chapters a meeting while it records, boundary pass after Stop
 ├── Vocabulary biasing no labs.vocabulary_biasing                Parakeet transcription biased toward the vocabulary (#452/#457)
 ├── Switch model with keyboard language  no  keyboard_model_switching.enabled  (macOS, Windows, X11)

@@ -181,12 +181,28 @@ pub(crate) type EngineSource =
 
 /// The running app's shared dictation engine and its loaded GGUF model.
 pub(crate) fn shared_engine() -> Result<(Box<dyn Engine>, TranscriptionSelection), &'static str> {
+    shared_engine_in(None)
+}
+
+/// [`shared_engine`] transcribing in `language` (a [`LANGUAGES`] code) for
+/// this stream alone, on the same loaded model, or `language-unsupported`
+/// when that model can't. The selection keeps the loaded language.
+///
+/// [`LANGUAGES`]: crate::transcription::models::LANGUAGES
+pub(crate) fn shared_engine_in(
+    language: Option<&str>,
+) -> Result<(Box<dyn Engine>, TranscriptionSelection), &'static str> {
     let engine = TranscriptionEngine::shared().ok_or("engine-unavailable")?;
     let selection = engine.held_selection().ok_or("model-not-loaded")?;
-    Ok((
-        Box::new(SharedEngine::new(&engine, selection.clone())),
-        selection,
-    ))
+    let definition = crate::transcription::models::definition(selection.model);
+    let hint = match language {
+        Some(code) if !definition.supports_language(code) => return Err("language-unsupported"),
+        Some(code) => definition.runtime_language_hint(code).map(str::to_string),
+        None => None,
+    };
+    let mut shared = SharedEngine::new(&engine, selection.clone());
+    shared.language = hint;
+    Ok((Box::new(shared), selection))
 }
 
 /// The running app's dictation engine, held weakly so a stream never keeps
@@ -194,6 +210,8 @@ pub(crate) fn shared_engine() -> Result<(Box<dyn Engine>, TranscriptionSelection
 pub(crate) struct SharedEngine {
     engine: Weak<TranscriptionEngine>,
     selection: TranscriptionSelection,
+    /// This stream's runtime language hint, else the loaded one.
+    language: Option<String>,
 }
 
 impl SharedEngine {
@@ -204,6 +222,7 @@ impl SharedEngine {
         Self {
             engine: Arc::downgrade(engine),
             selection,
+            language: None,
         }
     }
 }
@@ -224,7 +243,10 @@ impl Engine for SharedEngine {
     }
 
     fn begin(&self) -> Option<Box<dyn Live>> {
-        let stream = self.engine.upgrade()?.begin_yielding()?;
+        let stream = self
+            .engine
+            .upgrade()?
+            .begin_yielding_in(self.language.clone())?;
         Some(Box::new(stream))
     }
 
@@ -236,6 +258,7 @@ impl Engine for SharedEngine {
             thread::sleep(POLL);
         }
         let selection = self.selection.clone();
+        let language = self.language.clone();
         let engine = self
             .engine
             .upgrade()
@@ -247,8 +270,10 @@ impl Engine for SharedEngine {
                     // Never load or switch a model for a stream.
                     let transcriber = crate::transcription::engine::held(model, &selection)
                         .ok_or_else(|| MODEL_CHANGED.to_string())?;
-                    crate::transcription::engine::transcribe_clip(transcriber, samples)
-                        .map_err(|error| format!("{error:#}"))
+                    crate::transcription::gguf_session::with_language_hint(language, || {
+                        crate::transcription::engine::transcribe_clip(transcriber, samples)
+                    })
+                    .map_err(|error| format!("{error:#}"))
                 }),
             )
             .map_err(|error| format!("{error:#}"))?

@@ -41,7 +41,12 @@ pub(in crate::rune_ui) fn pane(ui: &Ui, p: Paint) -> (Vec<El>, El) {
     // Windows registers its own shortcut; elsewhere a desktop keybinding runs
     // `hex teleprompter toggle`. Hidden while a session runs: only its text.
     if !cfg!(target_os = "windows") || view.running {
-        return (std::iter::once(script).chain(actions(ui, p, view)).collect(), body);
+        return (
+            std::iter::once(script)
+                .chain(actions(ui, p, view))
+                .collect(),
+            body,
+        );
     }
     let rows = crate::rune_ui::general::shortcut_rows(
         ui,
@@ -58,7 +63,9 @@ pub(in crate::rune_ui) fn pane(ui: &Ui, p: Paint) -> (Vec<El>, El) {
         .pb(METRICS.section_gap)
         .child(card(p, "shortcut", rows));
     (
-        std::iter::once(script).chain(actions(ui, p, view)).collect(),
+        std::iter::once(script)
+            .chain(actions(ui, p, view))
+            .collect(),
         col()
             .key("teleprompter-page")
             .grow(1.0)
@@ -188,5 +195,21 @@ fn actions(ui: &Ui, p: Paint, view: &View) -> Vec<El> {
             ui.update(|settings| settings.labs.teleprompter_source = source);
         },
     );
-    vec![source, control(p, view)]
+    vec![language(ui, p), source, control(p, view)]
+}
+
+/// The session's language, picked before starting
+/// (`crate::teleprompter::language`).
+fn language(ui: &Ui, p: Paint) -> El {
+    use crate::teleprompter::language::{Language, choose, chosen};
+    let labels = Language::ALL.map(Language::label);
+    let chosen = chosen(&ui.settings.transcription.language);
+    let selected = Language::ALL.iter().position(|it| *it == chosen);
+    crate::rune_ui::controls::segmented(
+        p,
+        "teleprompter-language",
+        &labels,
+        selected.unwrap_or(0),
+        |_, index| choose(Language::ALL[index]),
+    )
 }
