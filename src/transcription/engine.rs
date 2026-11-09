@@ -119,6 +119,8 @@ pub(crate) enum Command {
         stream: u64,
         cancel: CancelToken,
         yielding: Yielding,
+        /// The stream's own runtime language, else the loaded one.
+        language: Option<String>,
     },
     /// Finalizes a yielding stream, or answers [`PREEMPTED`] at once when it
     /// is no longer open. It never runs anything offline.
@@ -634,7 +636,14 @@ impl TranscriptionEngine {
 
     /// Opens a stream that gives way to dictation, when the loaded model can
     /// stream on this device. See [`YieldingStream`].
+    #[cfg(test)]
     pub(crate) fn begin_yielding(&self) -> Option<YieldingStream> {
+        self.begin_yielding_in(None)
+    }
+
+    /// A [`Self::begin_yielding`] stream in `language` (a model's runtime
+    /// language hint) instead of the loaded model's, without reloading it.
+    pub(crate) fn begin_yielding_in(&self, language: Option<String>) -> Option<YieldingStream> {
         if !self.streams.load(Ordering::Acquire) {
             return None;
         }
@@ -646,6 +655,7 @@ impl TranscriptionEngine {
                 stream: id,
                 cancel: cancel.clone(),
                 yielding: yielding.clone(),
+                language,
             })
             .ok()?;
         Some(YieldingStream {
@@ -976,10 +986,13 @@ impl Worker {
                     stream,
                     cancel,
                     yielding,
+                    language,
                 } => {
                     // Anything already waiting comes first.
                     if next.is_empty() {
-                        self.yielding_stream(stream, &cancel, &yielding, &commands, &mut next);
+                        crate::transcription::gguf_session::with_language_hint(language, || {
+                            self.yielding_stream(stream, &cancel, &yielding, &commands, &mut next);
+                        });
                     }
                     yielding.close();
                 }

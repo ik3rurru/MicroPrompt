@@ -36,6 +36,10 @@ Feature             Pane  Toggle (settings.json, hex settings)   On: what it doe
 │                                        and saves as .txt or .srt into Documents/MicroPrompt (scene history-teleprompter)
 │                                        labs.teleprompter_hotkey (unbound): a Windows system hotkey (RegisterHotKey, src/teleprompter/hotkey.rs)
 │                                        starts and stops it with the window closed; Linux binds `hex teleprompter toggle`
+│                                        Español | English beside Start (src/teleprompter/language.rs): the session's language
+│                                        for this run of Hex only, sent as the loaded model's language hint (no reload, Settings
+│                                        untouched; default English when dictation is English, else Spanish); a model without
+│                                        it refuses to start and says so (Parakeet Unified English: no Spanish)
 ├── Live chapters   no    labs.live_chapters           (macOS)   chapters a meeting while it records, boundary pass after Stop
 ├── Vocabulary biasing no labs.vocabulary_biasing                Parakeet transcription biased toward the vocabulary (#452/#457)
 ├── Switch model with keyboard language  no  keyboard_model_switching.enabled  (macOS, Windows, X11)

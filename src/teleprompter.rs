@@ -20,6 +20,7 @@ use crate::history::{HistoryDraft, HistoryEntry, HistoryKind, HistorySegment};
 
 #[cfg(target_os = "windows")]
 pub(crate) mod hotkey;
+pub(crate) mod language;
 use crate::transcription::stream::{End, Event, SAMPLE_RATE, SampleFormat, Stream, Streams};
 
 /// Microphone chunks (10 ms each) waiting for the pump: about 5 s. Past it a
@@ -228,9 +229,9 @@ fn start() -> ControlReply {
     if session.is_some() {
         return ControlReply::unchanged("Teleprompter is already running");
     }
-    let (engine, selection) = match crate::transcription::stream::shared_engine() {
+    let (engine, selection, language) = match language::engine() {
         Ok(engine) => engine,
-        Err(code) => return ControlReply::error(code, "the speech model isn't loaded yet"),
+        Err(reply) => return reply,
     };
     let stream = match Streams::default().create(
         engine,
@@ -281,11 +282,11 @@ fn start() -> ControlReply {
         pump,
         reader,
     });
-    tracing::info!(model = ?selection.model, language = %selection.language, "teleprompter started");
+    tracing::info!(model = ?selection.model, language = language.code(), "teleprompter started");
     ControlReply::done(format!(
         "Teleprompter started on {} ({}); `hex teleprompter status` shows the text",
         crate::transcription::models::definition(selection.model).name,
-        selection.language
+        language.label()
     ))
 }
 

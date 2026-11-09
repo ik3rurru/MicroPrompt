@@ -22,6 +22,35 @@ const STREAM_PREWARM_SAMPLES: usize = 8 * 16_000;
 
 thread_local! {
     static JOB_CANCEL: RefCell<Option<transcribe_cpp::CancelToken>> = const { RefCell::new(None) };
+    static LANGUAGE_HINT: RefCell<Option<String>> = const { RefCell::new(None) };
+}
+
+/// Runs `work` with `hint` (a model's runtime language, such as `es-ES`) in
+/// place of the loaded language on every run and stream it makes on this
+/// thread: one stream's own language (MicroPrompt's Teleprompter) without
+/// reloading the model. `None` keeps the loaded language.
+pub(crate) fn with_language_hint<R>(hint: Option<String>, work: impl FnOnce() -> R) -> R {
+    struct Restore(Option<String>);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            LANGUAGE_HINT.with(|slot| *slot.borrow_mut() = self.0.take());
+        }
+    }
+    let Some(hint) = hint else {
+        return work();
+    };
+    let _restore = Restore(LANGUAGE_HINT.with(|slot| slot.borrow_mut().replace(hint)));
+    work()
+}
+
+/// `options` with [`with_language_hint`]'s language, when one is set.
+fn with_language<'a>(
+    mut options: Cow<'a, transcribe_cpp::RunOptions>,
+) -> Cow<'a, transcribe_cpp::RunOptions> {
+    if let Some(hint) = LANGUAGE_HINT.with(|slot| slot.borrow().clone()) {
+        options.to_mut().language = Some(hint);
+    }
+    options
 }
 
 /// Runs `work` with `cancel` installed on every offline run it makes on this
@@ -359,7 +388,7 @@ impl OfflineGgufSession {
             None => self.model.session_with(&self.options)?,
         };
         session.set_cancel_token(cancel);
-        let options = self.with_vocabulary(options, true);
+        let options = with_language(self.with_vocabulary(options, true));
         let result = session
             .stream(&options, stream_options)
             .map(|mut stream| drive(&mut stream));
@@ -387,7 +416,7 @@ impl OfflineGgufSession {
         if let Some(cancel) = job_cancel() {
             session.set_cancel_token(&cancel);
         }
-        let options = self.with_vocabulary(options, false);
+        let options = with_language(self.with_vocabulary(options, false));
         let result =
             keep_repetition_partial(session.run(samples, &options)).map(|mut transcript| {
                 if let Some(prompt) = &options.prompt {
