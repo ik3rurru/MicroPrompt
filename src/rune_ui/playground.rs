@@ -276,6 +276,7 @@ const PATHS: &[(&str, &str)] = &[
         "teleprompter-assistant",
         "Linux & Windows/Teleprompter/Assistant",
     ),
+    ("teleprompter-thread", "Linux & Windows/Teleprompter/Thread"),
     (
         "teleprompter-assistant-off",
         "Linux & Windows/Teleprompter/Assistant · Ollama closed",

@@ -805,6 +805,47 @@ pub(super) const SCENES: &[Scene] = &[
             ..Default::default()
         };
     }),
+    // MicroPrompt: a call as a thread, one message left out of the AI.
+    ("teleprompter-thread", |ui| {
+        use crate::teleprompter::source::Speaker::{Me, Others};
+        *ui = fixture(DesktopShortcuts::Registered);
+        ui.platform = platform::PlatformState::preview(platform::Capabilities::WINDOWS);
+        ui.host = platform::PlatformHost::Fixture(Vec::new());
+        ui.settings.labs.teleprompter = true;
+        ui.settings.labs.assistant = true;
+        ui.pane = Pane::Teleprompter;
+        ui.platform.teleprompter_assistant = crate::teleprompter::assistant::View {
+            status: crate::teleprompter::assistant::Status::Running,
+            models: vec![crate::teleprompter::assistant::Model {
+                name: "gemma4:12b".into(),
+                thinks: true,
+            }],
+            ..Default::default()
+        };
+        ui.platform.teleprompter = crate::teleprompter::View {
+            running: true,
+            segments: vec![
+                "Gracias por venir.".into(),
+                "¿Me cuentas un poco sobre ti?".into(),
+                "Claro. Llevo siete años en backend, sobre todo con Python y Go.".into(),
+                "Perdona, se me ha caído el café.".into(),
+                "Ahora lidero un equipo de cuatro personas.".into(),
+            ],
+            speakers: vec![Some(Others), Some(Others), Some(Me), Some(Me), Some(Me)],
+            times: vec![
+                (0, 1_200),
+                (1_400, 3_000),
+                (3_600, 8_000),
+                (11_000, 12_500),
+                (16_000, 19_000),
+            ],
+            unused: [3].into(),
+            speaker: Some(Others),
+            stable: "¿Y por qué quieres".into(),
+            tentative: " cambiar de".into(),
+            ..Default::default()
+        };
+    }),
     // MicroPrompt: Labs › Assistant while Ollama is closed.
     ("teleprompter-assistant-off", |ui| {
         *ui = fixture(DesktopShortcuts::Registered);

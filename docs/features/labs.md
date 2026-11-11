@@ -29,7 +29,7 @@ Feature             Pane  Toggle (settings.json, hex settings)   On: what it doe
 ├── Live text       no    labs.live_text                         provisional words beside the HUD while dictating
 ├── Settings search no    labs.settings_search                  a search field atop General filters its rows, Advanced's included
 ├── Teleprompter    yes   labs.teleprompter     (Linux, Windows)  MicroPrompt: live subtitles of the microphone; hex teleprompter start|status|stop
-│                                        Teleprompter joins the sidebar: the session's text, provisional words faint, Start/Stop session
+│                                        Teleprompter joins the sidebar: the session's text as messages (Labs › Assistant), provisional words faint, Start/Stop session
 │                                        (src/teleprompter.rs, src/rune_ui/labs/teleprompter.rs; scenes teleprompter, teleprompter-idle;
 │                                        checked by hand on Windows with HEX_AUDIO_FIXTURE and UI Automation; no golden yet)
 │                                        a stopped session is kept in History (kind Teleprompter, timed lines, 128 KiB of text)
@@ -64,11 +64,17 @@ Feature             Pane  Toggle (settings.json, hex settings)   On: what it doe
 ├── Assistant       no    labs.assistant        (Linux, Windows)  MicroPrompt: Teleprompter shows a Local model card: whether Ollama runs on this
 │                                        computer (127.0.0.1:11434, loopback HTTP; its cloud models are left out, so nothing leaves it),
 │                                        its installed models to pick from (`labs.assistant_model`, default gemma4:12b, else the first
-│                                        installed), and Try it, a test question whose answer streams in; Check again looks again after
-│                                        Ollama starts. It is the client the assistant's actions (AS-03…) and EN-03 use
-│                                        (src/teleprompter/assistant.rs, src/rune_ui/labs/teleprompter_assistant.rs; scenes
-│                                        teleprompter-assistant, teleprompter-assistant-off; model list and streaming unit-tested
-│                                        against a stand-in server; no golden)
+│                                        installed), and Try it, which asks for a one-sentence summary of the thread (an introduction
+│                                        before anything is said), streaming in; Check again looks again after Ollama starts. The
+│                                        session reads as a thread: a speaker's segments join into one message until the turn changes
+│                                        or 2.5 s of pause (src/teleprompter/conversation.rs), and with this lab on each message has a
+│                                        Use in AI switch; one switched off shows faint and is left out of what the assistant reads
+│                                        (newest messages within 16,000 characters, the open words included), until the next session.
+│                                        It is the client and context the assistant's actions (AS-03…) and EN-03 use
+│                                        (src/teleprompter/assistant.rs, src/rune_ui/labs/teleprompter/assistant.rs; scenes
+│                                        teleprompter-assistant, teleprompter-assistant-off, teleprompter-thread; model list,
+│                                        streaming, messages, and the context unit-tested; the switches not clicked in the running
+│                                        app; no golden)
 ├── Live chapters   no    labs.live_chapters           (macOS)   chapters a meeting while it records, boundary pass after Stop
 ├── Vocabulary biasing no labs.vocabulary_biasing                Parakeet transcription biased toward the vocabulary (#452/#457)
 ├── Switch model with keyboard language  no  keyboard_model_switching.enabled  (macOS, Windows, X11)

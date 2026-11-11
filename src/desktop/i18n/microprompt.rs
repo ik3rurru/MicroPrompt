@@ -21,6 +21,8 @@ pub(super) const TRANSLATIONS: &[(&str, [&str; 6])] = &[
     ("Ollama isn't running", ["Ollama nie działa", "Ollama 未运行", "Ollama は実行されていません", "Ollama läuft nicht", "Ollama no está en marcha", "Ollama не працює"]),
     ("Ollama has no local models: ollama pull gemma4:12b", ["Ollama nie ma lokalnych modeli: ollama pull gemma4:12b", "Ollama 没有本地模型：ollama pull gemma4:12b", "Ollama にローカルモデルがありません：ollama pull gemma4:12b", "Ollama hat keine lokalen Modelle: ollama pull gemma4:12b", "Ollama no tiene modelos locales: ollama pull gemma4:12b", "В Ollama немає локальних моделей: ollama pull gemma4:12b"]),
     ("Answering…", ["Odpowiada…", "正在回答…", "回答中…", "Antwortet…", "Respondiendo…", "Відповідає…"]),
+    ("Use in AI", ["Użyj w AI", "用于 AI", "AI に使う", "Für die KI nutzen", "Usar en la IA", "Використати в ШІ"]),
+    ("Summarize this conversation in one sentence:", ["Podsumuj tę rozmowę w jednym zdaniu:", "用一句话总结这段对话：", "この会話を一文で要約してください：", "Fasse dieses Gespräch in einem Satz zusammen:", "Resume esta conversación en una frase:", "Підсумуй цю розмову одним реченням:"]),
     ("Introduce yourself in one short sentence.", ["Przedstaw się w jednym krótkim zdaniu.", "用一句简短的话介绍你自己。", "短い一文で自己紹介してください。", "Stell dich in einem kurzen Satz vor.", "Preséntate en una frase corta.", "Представся одним коротким реченням."]),
     ("Both", ["Oba", "两者", "両方", "Beides", "Ambos", "Обидва"]),
     ("Couldn't save it: {}", ["Nie udało się zapisać: {}", "无法保存：{}", "保存できませんでした：{}", "Speichern fehlgeschlagen: {}", "No se pudo guardar: {}", "Не вдалося зберегти: {}"]),

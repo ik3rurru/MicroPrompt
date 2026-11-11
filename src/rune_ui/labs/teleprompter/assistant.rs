@@ -1,6 +1,7 @@
 //! The Teleprompter pane's assistant card (MicroPrompt, Labs › Assistant):
 //! whether Ollama runs, the model that answers (`labs.assistant_model`), and
-//! Try it, a test question whose answer streams in. The model is
+//! Try it, a one-sentence summary of the thread the assistant may read (an
+//! introduction before anything is said), streaming in. The model is
 //! [`crate::teleprompter::assistant`].
 
 use rune::{El, col, row, text};
@@ -97,10 +98,7 @@ fn answer(p: Paint, view: &assistant::View, model: assistant::Model) -> El {
         ButtonKind::Secondary,
         move |ui, _| {
             if !ui.platform.teleprompter_assistant.asking {
-                assistant::try_it(
-                    model.clone(),
-                    tr("Introduce yourself in one short sentence.").into(),
-                );
+                assistant::try_it(model.clone(), question(&ui.platform.teleprompter));
             }
         },
     );
@@ -126,4 +124,20 @@ fn answer(p: Paint, view: &assistant::View, model: assistant::Model) -> El {
         .center_y()
         .child(ask)
         .children(said)
+}
+
+/// Try it's question: a one-sentence summary of what the thread lets the
+/// assistant read, or, before anything is said, an introduction.
+fn question(session: &crate::teleprompter::View) -> String {
+    use crate::teleprompter::conversation::{BUDGET_CHARS, for_ai};
+    let conversation = for_ai(session, BUDGET_CHARS);
+    if conversation.is_empty() {
+        return tr("Introduce yourself in one short sentence.").into();
+    }
+    format!(
+        "{}
+
+{conversation}",
+        tr("Summarize this conversation in one sentence:")
+    )
 }

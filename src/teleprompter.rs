@@ -20,6 +20,7 @@ use crate::history::{HistoryDraft, HistoryEntry, HistoryKind, HistorySegment};
 
 #[cfg(target_os = "windows")]
 pub(crate) mod assistant;
+pub(crate) mod conversation;
 pub(crate) mod hotkey;
 pub(crate) mod interview;
 pub(crate) mod language;
@@ -87,6 +88,11 @@ pub(crate) struct View {
     pub(crate) segments: Vec<String>,
     /// Who said each segment, when the session hears both sources.
     pub(crate) speakers: Vec<Option<Speaker>>,
+    /// Each segment's start and end in the session's audio, in ms.
+    pub(crate) times: Vec<(u64, u64)>,
+    /// The messages the assistant leaves out, by their first segment
+    /// ([`conversation::Message::first`]).
+    pub(crate) unused: std::collections::BTreeSet<usize>,
     /// Who is saying the open segment.
     pub(crate) speaker: Option<Speaker>,
     /// The open segment: committed words, then the model's guess.
@@ -119,6 +125,8 @@ impl Live {
                 stopping: false,
                 segments: Vec::new(),
                 speakers: Vec::new(),
+                times: Vec::new(),
+                unused: std::collections::BTreeSet::new(),
                 speaker: None,
                 stable: String::new(),
                 tentative: String::new(),
@@ -214,6 +222,18 @@ fn wake() {
     if let Some(wake) = lock(&WAKER).clone() {
         wake();
     }
+}
+
+/// Lets the assistant use the message that starts at segment `first`, or
+/// leaves it out (the thread's switch).
+pub(crate) fn use_in_ai(first: usize, used: bool) {
+    update(|live| {
+        if used {
+            live.view.unused.remove(&first);
+        } else {
+            live.view.unused.insert(first);
+        }
+    });
 }
 
 /// Changes the view through `change`, then wakes the window.
@@ -470,6 +490,7 @@ fn read(stream: &Stream, sent: &AtomicU64) {
                     live.view.segments.push(segment.text.clone());
                     let speaker = speaker_at(&live.turns, segment.start_ms, segment.end_ms);
                     live.view.speakers.push(speaker);
+                    live.view.times.push((segment.start_ms, segment.end_ms));
                     live.view.stable.clear();
                     live.view.tentative.clear();
                 }

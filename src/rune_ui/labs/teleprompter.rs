@@ -10,7 +10,7 @@ pub(in crate::rune_ui) mod script;
 use rune::{El, Span, TextStyle, col, rich, row, text};
 
 use crate::desktop::i18n::tr;
-use crate::rune_ui::controls::{ButtonKind, METRICS, Paint, button, card, pulsing_dot};
+use crate::rune_ui::controls::{ButtonKind, METRICS, Paint, button, card, pulsing_dot, row_switch};
 use crate::rune_ui::lists::placeholder;
 use crate::rune_ui::platform::PlatformState;
 use crate::rune_ui::{Tx, Ui, list_detail};
@@ -40,7 +40,9 @@ pub(in crate::rune_ui) fn poll(state: &mut PlatformState) -> bool {
 
 pub(in crate::rune_ui) fn pane(ui: &Ui, p: Paint) -> (Vec<El>, El) {
     let view = &ui.platform.teleprompter;
-    let body = script::view(ui, p).unwrap_or_else(|| body(p, view));
+    let lab = crate::labs::Feature::Assistant;
+    let assistant = lab.on_this_os() && lab.on(&ui.settings);
+    let body = script::view(ui, p).unwrap_or_else(|| body(p, view, assistant));
     let script = script::button_for(ui, p);
     let actions = std::iter::once(script)
         .chain(actions(ui, p, view))
@@ -121,7 +123,7 @@ fn control(p: Paint, view: &View) -> El {
         ))
 }
 
-fn body(p: Paint, view: &View) -> El {
+fn body(p: Paint, view: &View, assistant: bool) -> El {
     let error = view.error.as_ref().map(|error| {
         text(error.clone())
             .key("teleprompter-error")
@@ -150,39 +152,49 @@ fn body(p: Paint, view: &View) -> El {
         .gap(14.0)
         .px(METRICS.gutter)
         .pb(16.0);
-    // With both sources, a line names its speaker when the turn changes.
+    // A message names its speaker when the turn changes; with the
+    // assistant on, each has a switch that leaves it out of what it reads.
     let mut last = None;
-    let mut named = |line: El, key: String, speaker: Option<Speaker>| {
-        let Some(speaker) = speaker.filter(|speaker| last != Some(*speaker)) else {
-            return line;
+    for message in crate::teleprompter::conversation::messages(view) {
+        let first = message.first;
+        let named = message.speaker.filter(|speaker| last != Some(*speaker));
+        last = message.speaker.or(last);
+        let guess = message.guess_from.min(message.text.len());
+        let faint = Span::new(guess, message.text.len()).color(p.faint());
+        let color = if message.used || !assistant {
+            p.text()
+        } else {
+            p.faint()
         };
-        last = Some(speaker);
-        let name = match speaker {
-            Speaker::Me => tr("Me"),
-            Speaker::Others => tr("Others"),
-        };
-        let name = text(name).font(p.k.ty.ui).color(p.faint());
-        col().key(key).gap(2.0).pt(6.0).child(name).child(line)
-    };
-    for (index, segment) in view.segments.iter().enumerate() {
-        let speaker = view.speakers.get(index).copied().flatten();
-        let line = text(segment.trim().to_owned())
-            .key(format!("segment-{index}"))
+        let words = rich(message.text, vec![faint])
+            .key(format!("message-{first}"))
             .font(CAPTION)
-            .color(p.text())
-            .wrap();
-        lines = lines.child(named(line, format!("speaker-{index}"), speaker));
-    }
-    if !open.trim().is_empty() {
-        let stable = view.stable.trim_start();
-        let words = format!("{stable}{}", view.tentative);
-        let words = words.trim_end().to_owned();
-        let faint = Span::new(stable.len().min(words.len()), words.len()).color(p.faint());
-        let line = rich(words, vec![faint])
-            .key("open-segment")
-            .font(CAPTION)
-            .color(p.text());
-        lines = lines.child(named(line, "speaker-open".into(), view.speaker));
+            .color(color);
+        let name = named.map(|speaker| {
+            let name = match speaker {
+                Speaker::Me => tr("Me"),
+                Speaker::Others => tr("Others"),
+            };
+            text(name).font(p.k.ty.ui).color(p.faint())
+        });
+        let switch = assistant.then(|| use_in_ai(p, first, message.used));
+        let header = (name.is_some() || switch.is_some()).then(|| {
+            row()
+                .key("header")
+                .gap(8.0)
+                .center_y()
+                .children(name)
+                .child(row().key("space").grow(1.0))
+                .children(switch)
+        });
+        lines = lines.child(
+            col()
+                .key(format!("thread-{first}"))
+                .gap(2.0)
+                .pt(if header.is_some() { 6.0 } else { 0.0 })
+                .children(header)
+                .child(words),
+        );
     }
     col()
         .key("teleprompter")
@@ -236,4 +248,16 @@ fn language(ui: &Ui, p: Paint) -> El {
         selected.unwrap_or(0),
         |_, index| choose(Language::ALL[index]),
     )
+}
+
+/// A message's switch: the assistant reads the message while on.
+fn use_in_ai(p: Paint, first: usize, used: bool) -> El {
+    row()
+        .key("use-in-ai")
+        .role("switch")
+        .label(tr("Use in AI"))
+        .checked(used)
+        .focusable(true)
+        .child(row_switch(p, used))
+        .on_press(move |_: &mut Ui| crate::teleprompter::use_in_ai(first, !used))
 }
