@@ -21,6 +21,7 @@ use crate::history::{HistoryDraft, HistoryEntry, HistoryKind, HistorySegment};
 #[cfg(target_os = "windows")]
 pub(crate) mod assistant;
 pub(crate) mod conversation;
+pub(crate) mod hints;
 pub(crate) mod hotkey;
 pub(crate) mod interview;
 pub(crate) mod language;
@@ -133,6 +134,14 @@ struct Live {
     behind_ms: Vec<u64>,
     /// Each change of speaker and the audio sent when it came.
     turns: Vec<(u64, Speaker)>,
+    /// Labs › Interview prep: the interviewer's questions get hints (EN-03).
+    hints: bool,
+    /// The session hears only the system audio: every line is the other
+    /// person's.
+    others_only: bool,
+    /// The first segment of the interviewer's turn that last got a hint:
+    /// one per turn.
+    hinted_turn: Option<usize>,
 }
 
 impl Live {
@@ -156,6 +165,9 @@ impl Live {
             partials: Vec::new(),
             behind_ms: Vec::new(),
             turns: Vec::new(),
+            hints: false,
+            others_only: false,
+            hinted_turn: None,
         }
     }
 
@@ -393,6 +405,10 @@ fn start() -> ControlReply {
     if crate::labs::Feature::Assistant.on(&settings) {
         assistant::warm();
     }
+    update(|live| {
+        live.hints = crate::labs::Feature::Interview.on(&settings);
+        live.others_only = settings.labs.teleprompter_source == source::Source::System;
+    });
     ControlReply::done(format!(
         "Teleprompter started on {} ({}); `hex teleprompter status` shows the text",
         crate::transcription::models::definition(selection.model).name,
@@ -544,10 +560,62 @@ fn read(stream: &Stream, sent: &AtomicU64) {
                 }
                 Event::Final { .. } | Event::Cancelled => {}
             });
+            if let Event::Segment(_) = event
+                && let Some(question) = asked()
+            {
+                assistant::hint(&question);
+            }
             true
         },
         &mut || true,
     );
+}
+
+/// Quiet between two of the other person's segments that starts a new turn,
+/// as the EN-01 prototype told them apart.
+const TURN_GAP_MS: u64 = 5_000;
+
+/// The interviewer's turn, once a closed segment makes it a question it
+/// hasn't had a hint for (EN-03): the other person's segments since the
+/// user last spoke.
+fn asked() -> Option<String> {
+    asked_in(&mut lock(&LIVE))
+}
+
+fn asked_in(live: &mut Live) -> Option<String> {
+    if !live.hints {
+        return None;
+    }
+    let others = |index: usize| match live.view.speakers.get(index).copied().flatten() {
+        Some(speaker) => speaker == Speaker::Others,
+        None => live.others_only,
+    };
+    let last = live.view.segments.len().checked_sub(1)?;
+    if !others(last) {
+        return None;
+    }
+    // A long quiet in the other person's audio is the user answering, which
+    // a session hearing only the system audio has no other way to tell.
+    let joined = |index: usize| {
+        index == last
+            || match (live.view.times.get(index), live.view.times.get(index + 1)) {
+                (Some((_, end)), Some((start, _))) => start.saturating_sub(*end) < TURN_GAP_MS,
+                _ => true,
+            }
+    };
+    let first = (0..=last)
+        .rev()
+        .take_while(|index| others(*index) && joined(*index))
+        .last()?;
+    if live.hinted_turn == Some(first) {
+        return None;
+    }
+    let turn = live.view.segments[first..=last].join(" ");
+    if !hints::is_question(&turn) {
+        return None;
+    }
+    live.hinted_turn = Some(first);
+    Some(turn.trim().to_owned())
 }
 
 /// Keeps a finished session in History, each line under its speaker's name
@@ -713,5 +781,40 @@ mod tests {
             ControlReply::Error { code, .. } if code == "feature-off"
         ));
         assert!(!wants_audio());
+    }
+
+    #[test]
+    fn the_interviewers_turn_gets_one_hint_once_it_is_a_question() {
+        use source::Speaker::{Me, Others};
+        let mut live = Live::new();
+        live.hints = true;
+        let say = |live: &mut Live, speaker, start: u64, text: &str| {
+            live.view.segments.push(text.into());
+            live.view.speakers.push(Some(speaker));
+            live.view.times.push((start, start + 1_000));
+            asked_in(live)
+        };
+        assert_eq!(say(&mut live, Others, 0, "Hablemos de dinero."), None);
+        assert_eq!(
+            say(&mut live, Others, 1_500, "Cuánto te gustaría cobrar"),
+            Some("Hablemos de dinero. Cuánto te gustaría cobrar".into())
+        );
+        // The same turn going on gets no second hint; the user's words none.
+        assert_eq!(say(&mut live, Others, 3_000, "¿Más o menos?"), None);
+        assert_eq!(say(&mut live, Me, 5_000, "¿Puedo preguntar algo?"), None);
+        assert_eq!(
+            say(&mut live, Others, 8_000, "¿Y en cinco años?"),
+            Some("¿Y en cinco años?".into())
+        );
+        // Hearing only the system audio, a long quiet starts a new turn.
+        let mut alone = Live::new();
+        alone.hints = true;
+        alone.others_only = true;
+        for (start, text) in [(0, "¿Qué tal?"), (20_000, "Cuéntame un proyecto.")] {
+            alone.view.segments.push(text.into());
+            alone.view.speakers.push(None);
+            alone.view.times.push((start, start + 1_000));
+            assert_eq!(asked_in(&mut alone), Some(text.into()));
+        }
     }
 }

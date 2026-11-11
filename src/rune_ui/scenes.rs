@@ -875,6 +875,25 @@ pub(super) const SCENES: &[Scene] = &[
                 (16_000, 19_000),
             ],
             unused: [3].into(),
+            answers: vec![crate::teleprompter::Answer {
+                action: crate::teleprompter::prompts::Action::Hint,
+                after: 2,
+                text: concat!(
+                    "*From your script: Háblame de ti*
+
+> ¿Me cuentas un poco sobre ti?
+
+",
+                    "- 7 años backend, Python y Go
+- Logística y pagos
+- Lidero 4 personas
+",
+                )
+                .into(),
+                done: true,
+                error: None,
+                used: true,
+            }],
             speaker: Some(Others),
             stable: "¿Y por qué quieres".into(),
             tentative: " cambiar de".into(),

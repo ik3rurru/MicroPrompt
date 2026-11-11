@@ -1175,6 +1175,8 @@ const TRANSLATIONS: &[(&str, &str)] = &[
     ("Ollama isn't running", "Ollama не запущена"),
     ("Ollama has no local models: ollama pull gemma4:12b", "В Ollama нет локальных моделей: ollama pull gemma4:12b"),
     ("Answering…", "Отвечает…"),
+    ("Hint", "Подсказка"),
+    ("From your script", "Из вашего сценария"),
     ("New session", "Новый сеанс"),
     ("Suggest", "Подсказать"),
     ("Answer", "Ответить"),

@@ -63,6 +63,16 @@ Feature             Pane  Toggle (settings.json, hex settings)   On: what it doe
 │                                        (src/teleprompter/interview.rs, src/rune_ui/labs/teleprompter_script.rs; scenes
 │                                        teleprompter-interview, teleprompter-interview-stories; sections, ticks, and documents
 │                                        unit-tested; the file dialog and the clicks not exercised; no golden)
+│                                        Hints (EN-03): while a session runs, when the other person's turn (their segments since the
+│                                        user last spoke or 5 s of their quiet; every line with System audio alone) becomes a question
+│                                        (a question mark, or how a clause opens: "Cuéntame…", "me haces…", "Cómo diseñarías…"), the
+│                                        thread gets one Hint per turn: the user's own points when the question matches one of the
+│                                        script's "## Preguntas previstas" (`###` question, `También:` phrasings, `-` points; content
+│                                        words, 60 %), or "Preguntas que haré" for "¿tienes alguna pregunta?"; else, with Labs ›
+│                                        Assistant on, the local model's three points from the script and documents, anything else
+│                                        marked "(sugerencia)". The user's own words never fire one (src/teleprompter/hints.rs, the
+│                                        EN-01 prototype's rules; turns, questions, and matching unit-tested; the model's hint measured
+│                                        on gemma4:12b warm: 0.17 s to the first point, 0.44 s for all three; not tried on a real call)
 ├── Assistant       no    labs.assistant        (Linux, Windows)  MicroPrompt: Teleprompter shows a Local model card: whether Ollama runs on this
 │                                        computer (127.0.0.1:11434, loopback HTTP; its cloud models are left out, so nothing leaves it),
 │                                        its installed models to pick from (`labs.assistant_model`, default gemma4:12b, else the first

@@ -14,6 +14,9 @@ pub(crate) enum Action {
     /// The full answer to what was asked, in the format its kind needs.
     /// Also reads the assistant's earlier answers.
     Answer,
+    /// Three key points for the interviewer's question, on its own when
+    /// the question ends (EN-03, [`super::hints`]).
+    Hint,
 }
 
 impl Action {
@@ -24,6 +27,7 @@ impl Action {
         match self {
             Self::Suggest => "Suggest",
             Self::Answer => "Answer",
+            Self::Hint => "Hint",
         }
     }
 
@@ -84,13 +88,23 @@ taken from the user's documents, then **Talking points:** 2 or 3 bullets.
 No preamble. If it is genuinely unclear what is being asked, say so in one line \
 and give your best guess.";
 
+const HINT: &str = "\
+The other person just asked the user the question under \"Question\", at the end. \
+Give EXACTLY 3 key points for answering it that the user can say in their own \
+words: one line each, starting with \"- \", at most 8 words each: ideas, not \
+sentences. Nothing else: no title, no introduction, no closing. Use the facts in \
+the documents (numbers, projects, names); if a point is not in them, end it with \
+\"({suggestion})\".";
+
 /// The chat messages for `action`: how to answer, then what to answer from.
 /// `conversation` is [`super::conversation::for_ai`]'s text; `documents`
-/// are (name, text) pairs such as the script and the CV.
+/// are (name, text) pairs such as the script and the CV; `question`, the
+/// one a hint answers.
 pub(crate) fn messages(
     action: Action,
     language: &str,
     conversation: &str,
+    question: Option<&str>,
     documents: &[(String, String)],
 ) -> Vec<Value> {
     use crate::desktop::i18n::tr;
@@ -101,9 +115,17 @@ pub(crate) fn messages(
     let (language, labels) = match language {
         "es" => (
             "Spanish",
-            ["Di esto", "Ideas clave", "Posibles repreguntas"],
+            [
+                "Di esto",
+                "Ideas clave",
+                "Posibles repreguntas",
+                "sugerencia",
+            ],
         ),
-        _ => ("English", ["Say this", "Key points", "Likely follow-ups"]),
+        _ => (
+            "English",
+            ["Say this", "Key points", "Likely follow-ups", "suggestion"],
+        ),
     };
     let task = match action {
         Action::Suggest => SUGGEST
@@ -111,6 +133,7 @@ pub(crate) fn messages(
             .replace("{points}", labels[1])
             .replace("{follow}", labels[2]),
         Action::Answer => ANSWER.to_owned(),
+        Action::Hint => HINT.replace("{suggestion}", labels[3]),
     };
     let system = format!(
         "{role}\n\n{task}\n\nWrite your whole answer in {language}, the bold labels translated too."
@@ -129,6 +152,9 @@ pub(crate) fn messages(
         conversation
     };
     user.push_str(&format!("=== Conversation ===\n{conversation}"));
+    if let Some(question) = question {
+        user.push_str(&format!("\n\n=== Question ===\n{}", question.trim()));
+    }
     vec![
         json!({ "role": "system", "content": system }),
         json!({ "role": "user", "content": user }),
@@ -148,7 +174,7 @@ mod tests {
             ),
             ("CV".to_owned(), "  ".to_owned()),
         ];
-        let sent = messages(Action::Suggest, "es", "Others: ¿Qué tal?", &documents);
+        let sent = messages(Action::Suggest, "es", "Others: ¿Qué tal?", None, &documents);
         let system = sent[0]["content"].as_str().unwrap();
         let user = sent[1]["content"].as_str().unwrap();
         assert!(
@@ -160,7 +186,7 @@ mod tests {
             user,
             "=== Script ===\n## Sobre mí\n- Backend, 7 años\n\n=== Conversation ===\nOthers: ¿Qué tal?"
         );
-        let answer = messages(Action::Answer, "en", "", &[]);
+        let answer = messages(Action::Answer, "en", "", None, &[]);
         assert!(
             answer[0]["content"]
                 .as_str()

@@ -294,10 +294,57 @@ pub(crate) fn warm() {
 /// streaming into the thread after what has been heard. One at a time: a
 /// press while one answers does nothing.
 pub(crate) fn ask(action: Action) {
-    let Some(index) = begin(action) else {
+    let Some(index) = begin(action, true) else {
         return;
     };
-    std::thread::spawn(move || {
+    std::thread::spawn(move || stream(index, action, None));
+}
+
+/// The interview's hint for `question` (EN-03): the script's own points at
+/// once when it is one of its prepared questions, else, with Labs ›
+/// Assistant on, the model's three, streaming. It never waits for an
+/// answer in progress.
+pub(crate) fn hint(question: &str) {
+    let script = documents()
+        .into_iter()
+        .find(|(name, _)| name == "Script")
+        .map(|(_, text)| text)
+        .unwrap_or_default();
+    let prepared = super::hints::prepared(&script);
+    if let Some(entry) = super::hints::matching(question, &prepared) {
+        tracing::info!(entry = entry.name, "interview hint from the script");
+        let text = super::hints::from_script(question, entry);
+        if let Some(index) = begin(Action::Hint, false) {
+            super::update(|live| {
+                if let Some(answer) = live.view.answers.get_mut(index) {
+                    answer.text = text;
+                    answer.done = true;
+                }
+            });
+        }
+        return;
+    }
+    let settings = AppSettings::read().unwrap_or_default();
+    if !crate::labs::Feature::Assistant.on(&settings) {
+        return;
+    }
+    if let Some(index) = begin(Action::Hint, false) {
+        let question = question.to_owned();
+        std::thread::spawn(move || stream(index, Action::Hint, Some(question)));
+    }
+}
+
+fn documents() -> Vec<(String, String)> {
+    DOCUMENTS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone()
+}
+
+/// Answers `action` (for a hint, its `question`) into the thread's answer
+/// `index`, piece by piece.
+fn stream(index: usize, action: Action, question: Option<String>) {
+    {
         let started = std::time::Instant::now();
         let settings = AppSettings::read().unwrap_or_default();
         let language = super::language::chosen(&settings.transcription.language);
@@ -307,11 +354,14 @@ pub(crate) fn ask(action: Action) {
             super::conversation::BUDGET_CHARS,
             action.reads_answers(),
         );
-        let documents = DOCUMENTS
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .clone();
-        let messages = super::prompts::messages(action, language.code(), &conversation, &documents);
+        let documents = documents();
+        let messages = super::prompts::messages(
+            action,
+            language.code(),
+            &conversation,
+            question.as_deref(),
+            &documents,
+        );
         let mut first = None;
         let result = chosen(&settings).and_then(|model| {
             chat(&model, messages, |piece| {
@@ -348,16 +398,21 @@ pub(crate) fn ask(action: Action) {
                 });
             }
         });
-    });
+    }
 }
 
-/// Adds `action`'s answer to the thread, unless one is still answering;
-/// its index.
-fn begin(action: Action) -> Option<usize> {
+/// Adds `action`'s answer to the thread; its index. An `exclusive` one (the
+/// buttons') is refused while another of them still answers; hints never
+/// wait.
+fn begin(action: Action, exclusive: bool) -> Option<usize> {
     let mut index = None;
     super::update(|live| {
         let view = &mut live.view;
-        if view.answers.iter().any(|answer| !answer.done) {
+        let busy = view
+            .answers
+            .iter()
+            .any(|answer| !answer.done && answer.action != Action::Hint);
+        if exclusive && busy {
             return;
         }
         let open = !format!("{}{}", view.stable, view.tentative)
@@ -536,9 +591,16 @@ Others: Y luego, ¿cómo invertirías una lista enlazada?";
             vec![json!({ "role": "user", "content": "hola" })],
             |_| {},
         );
-        for action in Action::ALL {
-            let messages =
-                crate::teleprompter::prompts::messages(action, "es", conversation, &documents);
+        let question = Some("¿cómo invertirías una lista enlazada?");
+        for action in [Action::Suggest, Action::Answer, Action::Hint] {
+            let question = question.filter(|_| action == Action::Hint);
+            let messages = crate::teleprompter::prompts::messages(
+                action,
+                "es",
+                conversation,
+                question,
+                &documents,
+            );
             let started = std::time::Instant::now();
             let mut first = None;
             let answer = chat(&model, messages, |_| {
