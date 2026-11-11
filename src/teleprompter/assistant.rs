@@ -358,7 +358,10 @@ mod tests {
     #[ignore = "needs Ollama running with a local model"]
     fn this_computers_ollama_answers_piece_by_piece() {
         let models = models().unwrap();
-        let view = View { models, ..View::default() };
+        let view = View {
+            models,
+            ..View::default()
+        };
         let model = view.model(None).expect("a local model");
         let started = std::time::Instant::now();
         let mut first = None;
