@@ -265,6 +265,28 @@ fn update(change: impl FnOnce(&mut Live)) {
     wake();
 }
 
+/// The pane's New session: the running session ends (kept in History like
+/// any stop) and a fresh one starts with the same source and language, its
+/// thread and answers empty; on a thread of its own, as [`toggle`].
+pub(crate) fn restart() {
+    let spawned = thread::Builder::new()
+        .name("teleprompter-restart".into())
+        .spawn(|| {
+            if lock(&SESSION).is_none() {
+                return;
+            }
+            for action in [TeleprompterAction::Stop, TeleprompterAction::Start] {
+                if let ControlReply::Error { message, .. } = command(action, true) {
+                    update(|live| live.view.error = Some(message));
+                    return;
+                }
+            }
+        });
+    if let Err(error) = spawned {
+        update(|live| live.view.error = Some(error.to_string()));
+    }
+}
+
 /// The pane's button: stops a running session, else starts one, on a
 /// thread of its own (a stop waits for the last words). A failure shows in
 /// [`View::error`].

@@ -30,6 +30,8 @@ Feature             Pane  Toggle (settings.json, hex settings)   On: what it doe
 ├── Settings search no    labs.settings_search                  a search field atop General filters its rows, Advanced's included
 ├── Teleprompter    yes   labs.teleprompter     (Linux, Windows)  MicroPrompt: live subtitles of the microphone; hex teleprompter start|status|stop
 │                                        Teleprompter joins the sidebar: the session's text as messages (Labs › Assistant), provisional words faint, Start/Stop session
+│                                        New session (while one runs) stops it, kept in History as any stop, and starts a fresh one
+│                                        with the same source and language, its thread and answers empty (crate::teleprompter::restart)
 │                                        (src/teleprompter.rs, src/rune_ui/labs/teleprompter.rs; scenes teleprompter, teleprompter-idle;
 │                                        checked by hand on Windows with HEX_AUDIO_FIXTURE and UI Automation; no golden yet)
 │                                        a stopped session is kept in History (kind Teleprompter, timed lines, 128 KiB of text)

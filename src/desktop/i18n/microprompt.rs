@@ -21,6 +21,7 @@ pub(super) const TRANSLATIONS: &[(&str, [&str; 6])] = &[
     ("Ollama isn't running", ["Ollama nie działa", "Ollama 未运行", "Ollama は実行されていません", "Ollama läuft nicht", "Ollama no está en marcha", "Ollama не працює"]),
     ("Ollama has no local models: ollama pull gemma4:12b", ["Ollama nie ma lokalnych modeli: ollama pull gemma4:12b", "Ollama 没有本地模型：ollama pull gemma4:12b", "Ollama にローカルモデルがありません：ollama pull gemma4:12b", "Ollama hat keine lokalen Modelle: ollama pull gemma4:12b", "Ollama no tiene modelos locales: ollama pull gemma4:12b", "В Ollama немає локальних моделей: ollama pull gemma4:12b"]),
     ("Answering…", ["Odpowiada…", "正在回答…", "回答中…", "Antwortet…", "Respondiendo…", "Відповідає…"]),
+    ("New session", ["Nowa sesja", "新会话", "新しいセッション", "Neue Sitzung", "Nueva sesión", "Новий сеанс"]),
     ("Suggest", ["Podpowiedz", "建议", "提案", "Vorschlagen", "Sugerir", "Підказати"]),
     ("Answer", ["Odpowiedz", "回答", "回答", "Antworten", "Responder", "Відповісти"]),
     ("What to say now, from the conversation", ["Co powiedzieć teraz, na podstawie rozmowy", "根据对话，现在该说什么", "会話から、今言うべきこと", "Was du jetzt sagen kannst, aus dem Gespräch", "Qué decir ahora, según la conversación", "Що сказати зараз, з розмови"]),

@@ -136,10 +136,25 @@ fn control(p: Paint, view: &View) -> El {
     } else {
         tr("Stop session")
     };
+    // Starts over: ends this session (kept in History) and opens a new one.
+    let restart = (!view.stopping).then(|| {
+        button(
+            p,
+            "teleprompter-restart",
+            tr("New session"),
+            ButtonKind::Secondary,
+            |ui: &mut Ui, _: &mut Tx| {
+                if !ui.platform.teleprompter.stopping {
+                    crate::teleprompter::restart();
+                }
+            },
+        )
+    });
     row()
         .key("teleprompter-running")
         .gap(8.0)
         .center_y()
+        .children(restart)
         .child(pulsing_dot(p.danger()))
         .child(button(
             p,
