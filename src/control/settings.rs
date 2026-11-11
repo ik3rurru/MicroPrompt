@@ -8,7 +8,7 @@ use serde_json::Value;
 use super::ControlError;
 use crate::app_settings::{
     AppSettings, CALENDAR_LEAD_MINUTES, HotkeyBinding, HotkeyKey, HotkeyModifiers, HotkeySlot,
-    ModifierSide,
+    ModifierSide, TeleprompterKey,
 };
 
 /// One setting as `hex settings get` reports it.
@@ -209,9 +209,21 @@ const KEYS: &[Key] = &[
     ),
     optional(
         "labs.teleprompter_hotkey",
-        Kind::Shortcut(HotkeySlot::Teleprompter),
+        Kind::Shortcut(HotkeySlot::Teleprompter(TeleprompterKey::Toggle)),
         "Labs › Teleprompter: starts and stops the session (Windows); none (the default) \
          turns it off. On Linux, bind `hex teleprompter toggle` in the desktop",
+    ),
+    optional(
+        "labs.assistant_suggest_hotkey",
+        Kind::Shortcut(HotkeySlot::Teleprompter(TeleprompterKey::Suggest)),
+        "Labs › Assistant: Suggest, what to say now, in the Teleprompter's thread (Windows); \
+         none (the default) turns it off",
+    ),
+    optional(
+        "labs.assistant_answer_hotkey",
+        Kind::Shortcut(HotkeySlot::Teleprompter(TeleprompterKey::Answer)),
+        "Labs › Assistant: Answer, the full answer to what was asked, in the Teleprompter's \
+         thread (Windows); none (the default) turns it off",
     ),
     optional(
         "raw_dictation_hotkey",
@@ -1048,7 +1060,9 @@ pub fn apply(
         | "screenshots.hotkey"
         | "capture.hotkey"
         | "capture.replay_hotkey"
-        | "labs.teleprompter_hotkey" => {
+        | "labs.teleprompter_hotkey"
+        | "labs.assistant_suggest_hotkey"
+        | "labs.assistant_answer_hotkey" => {
             let Kind::Shortcut(slot) = key.kind else {
                 unreachable!("shortcut keys have the shortcut kind");
             };
@@ -1059,7 +1073,7 @@ pub fn apply(
                 HotkeySlot::SecondDictation => candidate.second_dictation_hotkey.as_ref(),
                 HotkeySlot::Cancel => Some(&candidate.cancel_hotkey),
                 HotkeySlot::Screenshot => Some(&candidate.screenshots.hotkey),
-                HotkeySlot::Teleprompter => candidate.labs.teleprompter_hotkey.as_ref(),
+                HotkeySlot::Teleprompter(key) => candidate.labs.teleprompter_key(key),
                 #[cfg(hex_capture)]
                 HotkeySlot::Capture => Some(&candidate.capture.hotkey),
                 #[cfg(hex_capture)]

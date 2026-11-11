@@ -24,6 +24,7 @@ pub(crate) mod conversation;
 pub(crate) mod hotkey;
 pub(crate) mod interview;
 pub(crate) mod language;
+pub(crate) mod prompts;
 pub(crate) mod script;
 pub(crate) mod source;
 use crate::transcription::stream::{End, Event, SAMPLE_RATE, SampleFormat, Stream, Streams};
@@ -93,6 +94,8 @@ pub(crate) struct View {
     /// The messages the assistant leaves out, by their first segment
     /// ([`conversation::Message::first`]).
     pub(crate) unused: std::collections::BTreeSet<usize>,
+    /// The assistant's answers in the thread, oldest first.
+    pub(crate) answers: Vec<Answer>,
     /// Who is saying the open segment.
     pub(crate) speaker: Option<Speaker>,
     /// The open segment: committed words, then the model's guess.
@@ -102,6 +105,21 @@ pub(crate) struct View {
     pub(crate) error: Option<String>,
     /// Bumped by every change, so the window copies only a new view.
     pub(crate) generation: u64,
+}
+
+/// An answer of the assistant's in the thread (AS-03).
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct Answer {
+    pub(crate) action: prompts::Action,
+    /// The segments heard when it was asked, the open one included: the
+    /// messages it follows.
+    pub(crate) after: usize,
+    /// So far, while `done` is false.
+    pub(crate) text: String,
+    pub(crate) done: bool,
+    pub(crate) error: Option<String>,
+    /// Whether the assistant reads it again (Answer reads earlier answers).
+    pub(crate) used: bool,
 }
 
 /// What a session has shown so far, as `status` reports it.
@@ -127,6 +145,7 @@ impl Live {
                 speakers: Vec::new(),
                 times: Vec::new(),
                 unused: std::collections::BTreeSet::new(),
+                answers: Vec::new(),
                 speaker: None,
                 stable: String::new(),
                 tentative: String::new(),
@@ -348,6 +367,10 @@ fn start() -> ControlReply {
         reader,
     });
     tracing::info!(model = ?selection.model, language = language.code(), "teleprompter started");
+    let settings = crate::app_settings::AppSettings::read().unwrap_or_default();
+    if crate::labs::Feature::Assistant.on(&settings) {
+        assistant::warm();
+    }
     ControlReply::done(format!(
         "Teleprompter started on {} ({}); `hex teleprompter status` shows the text",
         crate::transcription::models::definition(selection.model).name,

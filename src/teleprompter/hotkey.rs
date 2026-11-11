@@ -1,5 +1,7 @@
-//! MicroPrompt: the Teleprompter's own global shortcut on Windows
-//! (`labs.teleprompter_hotkey`, unbound by default). It is a system hotkey
+//! MicroPrompt: the Teleprompter's own global shortcuts on Windows
+//! (`labs.teleprompter_hotkey`, and with Labs › Assistant
+//! `labs.assistant_suggest_hotkey` and `labs.assistant_answer_hotkey`; all
+//! unbound by default). It is a system hotkey
 //! (`RegisterHotKey`) on a thread of its own rather than another binding in
 //! Hex's keyboard hook, so it works with the window closed and never
 //! touches the dictation shortcuts' state machine; Settings keeps it from
@@ -18,38 +20,64 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
     GetMessageW, MSG, PM_NOREMOVE, PeekMessageW, PostThreadMessageW, WM_HOTKEY, WM_QUIT, WM_USER,
 };
 
-use crate::app_settings::{AppSettings, HotkeyBinding};
+use crate::app_settings::{AppSettings, HotkeyBinding, TeleprompterKey};
 use crate::windows::input::WindowsHotkey;
 
-/// The registered shortcut and the thread whose queue receives it.
-static CURRENT: Mutex<Option<(HotkeyBinding, u32)>> = Mutex::new(None);
+/// The registered shortcuts and the thread whose queue receives them.
+type Keys = Vec<(TeleprompterKey, HotkeyBinding)>;
+static CURRENT: Mutex<Option<(Keys, u32)>> = Mutex::new(None);
 
-/// Registers the saved shortcut while the Lab is on, replacing an older one;
+/// Registers the saved shortcuts their Labs turn on, replacing older ones;
 /// called at launch and after every settings change.
 pub(crate) fn apply(settings: &AppSettings) {
-    let wanted = settings
-        .labs
-        .teleprompter
-        .then(|| settings.labs.teleprompter_hotkey.clone())
-        .flatten();
+    let wanted: Vec<_> = TeleprompterKey::ALL
+        .into_iter()
+        .filter(|key| key.on(settings))
+        .filter_map(|key| Some((key, settings.labs.teleprompter_key(key)?.clone())))
+        .collect();
     let mut current = super::lock(&CURRENT);
-    if current.as_ref().map(|(binding, _)| binding) == wanted.as_ref() {
+    if current
+        .as_ref()
+        .map_or(&[][..], |(keys, _)| keys.as_slice())
+        == wanted.as_slice()
+    {
         return;
     }
     if let Some((_, thread)) = current.take() {
         unsafe { PostThreadMessageW(thread, WM_QUIT, 0, 0) };
     }
-    let Some(binding) = wanted else {
+    if wanted.is_empty() {
         return;
-    };
-    match register(&binding) {
-        Ok(thread) => *current = Some((binding, thread)),
+    }
+    match register(wanted.clone()) {
+        Ok((thread, refused)) => {
+            *current = Some((wanted, thread));
+            if !refused.is_empty() {
+                tracing::warn!(?refused, "some teleprompter shortcuts are not registered");
+                super::update(|live| {
+                    live.view.error = Some(format!(
+                        "The shortcut isn't available: another app already uses the {} shortcut",
+                        refused.join(", ")
+                    ));
+                });
+            }
+        }
         Err(error) => {
-            tracing::warn!(%error, "the teleprompter shortcut is not registered");
+            tracing::warn!(%error, "the teleprompter shortcuts are not registered");
             super::update(|live| {
                 live.view.error = Some(format!("The shortcut isn't available: {error}"));
             });
         }
+    }
+}
+
+/// What a press of `key` does.
+fn press(key: TeleprompterKey) {
+    use super::prompts::Action;
+    match key {
+        TeleprompterKey::Toggle => super::toggle(),
+        TeleprompterKey::Suggest => super::assistant::ask(Action::Suggest),
+        TeleprompterKey::Answer => super::assistant::ask(Action::Answer),
     }
 }
 
@@ -73,9 +101,13 @@ fn hotkey(binding: &HotkeyBinding) -> Result<(u32, u32), String> {
     Ok((modifiers, vk))
 }
 
-/// Starts the thread that owns the hotkey; its id once it is registered.
-fn register(binding: &HotkeyBinding) -> Result<u32, String> {
-    let (modifiers, vk) = hotkey(binding)?;
+/// Starts the thread that owns the hotkeys (id `n` + 1 for `keys[n]`);
+/// its id once they are registered, and the ones another app holds.
+fn register(keys: Keys) -> Result<(u32, Vec<String>), String> {
+    let mut hotkeys = Vec::new();
+    for (key, binding) in &keys {
+        hotkeys.push((*key, hotkey(binding)?, format!("{key:?}")));
+    }
     let (ready, registered) = mpsc::channel();
     std::thread::Builder::new()
         .name("teleprompter-hotkey".into())
@@ -89,24 +121,29 @@ fn register(binding: &HotkeyBinding) -> Result<u32, String> {
                 WM_USER,
                 PM_NOREMOVE,
             );
-            if RegisterHotKey(std::ptr::null_mut(), 1, modifiers, vk) == 0 {
-                let _ = ready.send(Err(
-                    "another app already uses it (RegisterHotKey failed)".to_string()
-                ));
-                return;
-            }
-            let _ = ready.send(Ok(GetCurrentThreadId()));
-            while GetMessageW(&mut message, std::ptr::null_mut(), 0, 0) > 0 {
-                if message.message == WM_HOTKEY && !crate::windows::input::capture_inhibited() {
-                    super::toggle();
+            let mut refused = Vec::new();
+            for (id, (_, (modifiers, vk), name)) in hotkeys.iter().enumerate() {
+                if RegisterHotKey(std::ptr::null_mut(), id as i32 + 1, *modifiers, *vk) == 0 {
+                    refused.push(name.clone());
                 }
             }
-            UnregisterHotKey(std::ptr::null_mut(), 1);
+            let _ = ready.send((GetCurrentThreadId(), refused));
+            while GetMessageW(&mut message, std::ptr::null_mut(), 0, 0) > 0 {
+                if message.message == WM_HOTKEY
+                    && !crate::windows::input::capture_inhibited()
+                    && let Some((key, _, _)) = hotkeys.get(message.wParam.wrapping_sub(1))
+                {
+                    press(*key);
+                }
+            }
+            for id in 1..=hotkeys.len() {
+                UnregisterHotKey(std::ptr::null_mut(), id as i32);
+            }
         })
         .map_err(|error| error.to_string())?;
     registered
         .recv()
-        .map_err(|_| "its thread stopped".to_string())?
+        .map_err(|_| "its thread stopped".to_string())
 }
 
 #[cfg(test)]

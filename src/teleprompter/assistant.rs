@@ -1,7 +1,8 @@
 //! MicroPrompt's local model (Labs › Assistant): Ollama on this computer,
 //! over loopback HTTP, so nothing leaves it. Ollama's cloud models are left
-//! out. [`chat`] is the client the assistant's actions use; [`view`],
-//! [`check`] and [`try_it`] are what the Teleprompter pane shows.
+//! out. [`chat`] is the client; [`ask`] runs the thread's actions (AS-03)
+//! into the session's thread; [`view`] and [`check`] are what the
+//! Teleprompter pane shows of Ollama.
 
 use std::io::{self, BufRead, BufReader, Read, Write};
 use std::net::{Ipv4Addr, SocketAddr, TcpStream};
@@ -10,10 +11,16 @@ use std::time::Duration;
 
 use serde_json::{Value, json};
 
+use super::prompts::Action;
+use crate::app_settings::AppSettings;
+
 /// Ollama's own port, on this computer only.
 const ADDRESS: SocketAddr = SocketAddr::new(std::net::IpAddr::V4(Ipv4Addr::LOCALHOST), 11434);
 /// EN-01's pick: the shortest, clearest points that keep to the script.
 pub(crate) const DEFAULT_MODEL: &str = "gemma4:12b";
+/// How long Ollama keeps the model loaded after a request: a call's quiet
+/// stretches, so an answer never waits for the model to load again.
+const KEEP_ALIVE: &str = "30m";
 /// Ollama answers on its port at once when it runs.
 const CONNECT: Duration = Duration::from_millis(500);
 /// Between two pieces of an answer; a cold model takes seconds to load.
@@ -64,7 +71,12 @@ pub(crate) fn chat(
     messages: Vec<Value>,
     mut piece: impl FnMut(&str),
 ) -> io::Result<String> {
-    let mut body = json!({ "model": model.name, "messages": messages, "stream": true });
+    let mut body = json!({
+        "model": model.name,
+        "messages": messages,
+        "stream": true,
+        "keep_alive": KEEP_ALIVE,
+    });
     if model.thinks {
         body["think"] = json!(false);
     }
@@ -158,9 +170,6 @@ pub(crate) struct View {
     pub generation: u64,
     pub status: Status,
     pub models: Vec<Model>,
-    /// The test answer so far.
-    pub answer: String,
-    pub asking: bool,
     pub error: Option<String>,
 }
 
@@ -180,8 +189,6 @@ static VIEW: Mutex<View> = Mutex::new(View {
     generation: 0,
     status: Status::Unchecked,
     models: Vec::new(),
-    answer: String::new(),
-    asking: false,
     error: None,
 });
 
@@ -233,29 +240,149 @@ pub(crate) fn check() {
     });
 }
 
-/// Asks `model` `question`, the answer streaming into [`View::answer`].
-pub(crate) fn try_it(model: Model, question: String) {
-    if lock().asking {
-        return;
-    }
-    update(|view| {
-        view.asking = true;
-        view.answer.clear();
-        view.error = None;
-    });
-    std::thread::spawn(move || {
-        let message = json!({ "role": "user", "content": question });
-        let result = chat(&model, vec![message], |piece| {
-            update(|view| view.answer.push_str(piece));
-        });
+/// The documents opened beside the session (the script, the CV, the
+/// offer, the company notes), as (name, text), which every action reads.
+static DOCUMENTS: Mutex<Vec<(String, String)>> = Mutex::new(Vec::new());
+
+/// What the window has open now; it calls this whenever that changes.
+pub(crate) fn set_documents(documents: Vec<(String, String)>) {
+    *DOCUMENTS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = documents;
+}
+
+/// The model the saved settings choose, looking for the installed ones
+/// first when the pane hasn't.
+fn chosen(settings: &AppSettings) -> io::Result<Model> {
+    if lock().models.is_empty() {
+        let found = models()?;
         update(|view| {
-            view.asking = false;
-            match result {
-                Ok(_) => {}
-                Err(error) if not_running(&error) => view.status = Status::NotRunning,
-                Err(error) => view.error = Some(error.to_string()),
+            view.status = Status::Running;
+            view.models = found;
+        });
+    }
+    let chosen = settings.labs.assistant_model.as_deref();
+    lock()
+        .model(chosen)
+        .cloned()
+        .ok_or_else(|| io::Error::other("Ollama has no local models: ollama pull gemma4:12b"))
+}
+
+/// Loads the chosen model while a session starts, so the first answer
+/// doesn't wait for it; quiet when Ollama isn't running.
+pub(crate) fn warm() {
+    std::thread::spawn(|| {
+        let settings = AppSettings::read().unwrap_or_default();
+        let Ok(model) = chosen(&settings) else {
+            return;
+        };
+        let body = json!({ "model": model.name, "messages": [], "keep_alive": KEEP_ALIVE });
+        let loaded = (|| -> io::Result<()> {
+            let body = serde_json::to_vec(&body)?;
+            let mut reply = String::new();
+            request("POST", "/api/chat", Some(&body))?.read_to_string(&mut reply)?;
+            Ok(())
+        })();
+        match loaded {
+            Ok(()) => tracing::info!(model = model.name, "assistant model loaded"),
+            Err(error) => tracing::warn!(%error, "assistant model didn't load"),
+        }
+    });
+}
+
+/// Runs `action` on what the thread lets the assistant read, its answer
+/// streaming into the thread after what has been heard. One at a time: a
+/// press while one answers does nothing.
+pub(crate) fn ask(action: Action) {
+    let Some(index) = begin(action) else {
+        return;
+    };
+    std::thread::spawn(move || {
+        let started = std::time::Instant::now();
+        let settings = AppSettings::read().unwrap_or_default();
+        let language = super::language::chosen(&settings.transcription.language);
+        let session = super::view();
+        let conversation = super::conversation::for_ai(
+            &session,
+            super::conversation::BUDGET_CHARS,
+            action.reads_answers(),
+        );
+        let documents = DOCUMENTS
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone();
+        let messages = super::prompts::messages(action, language.code(), &conversation, &documents);
+        let mut first = None;
+        let result = chosen(&settings).and_then(|model| {
+            chat(&model, messages, |piece| {
+                first.get_or_insert_with(|| started.elapsed());
+                super::update(|live| {
+                    if let Some(answer) = live.view.answers.get_mut(index) {
+                        answer.text.push_str(piece);
+                    }
+                });
+            })
+            .map(|_| model.name)
+        });
+        tracing::info!(
+            action = action.label(),
+            first_ms = first.map(|it| it.as_millis() as u64),
+            total_ms = started.elapsed().as_millis() as u64,
+            ok = result.is_ok(),
+            "assistant answered"
+        );
+        if let Err(error) = &result
+            && not_running(error)
+        {
+            update(|view| view.status = Status::NotRunning);
+        }
+        super::update(|live| {
+            if let Some(answer) = live.view.answers.get_mut(index) {
+                answer.done = true;
+                answer.error = result.err().map(|error| {
+                    if not_running(&error) {
+                        crate::desktop::i18n::tr("Ollama isn't running").to_owned()
+                    } else {
+                        error.to_string()
+                    }
+                });
             }
         });
+    });
+}
+
+/// Adds `action`'s answer to the thread, unless one is still answering;
+/// its index.
+fn begin(action: Action) -> Option<usize> {
+    let mut index = None;
+    super::update(|live| {
+        let view = &mut live.view;
+        if view.answers.iter().any(|answer| !answer.done) {
+            return;
+        }
+        let open = !format!("{}{}", view.stable, view.tentative)
+            .trim()
+            .is_empty();
+        view.answers.push(super::Answer {
+            action,
+            after: view.segments.len() + usize::from(open),
+            text: String::new(),
+            done: false,
+            error: None,
+            used: true,
+        });
+        index = Some(view.answers.len() - 1);
+    });
+    index
+}
+
+/// Lets the assistant read answer `index` again, or leaves it out (its
+/// switch in the thread).
+pub(crate) fn use_answer_in_ai(index: usize, used: bool) {
+    super::update(|live| {
+        if let Some(answer) = live.view.answers.get_mut(index) {
+            answer.used = used;
+        }
     });
 }
 
@@ -378,6 +505,55 @@ mod tests {
             started.elapsed()
         );
         assert!(pieces > 1 && !answer.trim().is_empty());
+    }
+
+    /// Suggest and Answer on this computer's Ollama, warm: how soon each
+    /// starts and what it says. `cargo test -- --ignored suggest_and_answer --nocapture`
+    #[test]
+    #[ignore = "needs Ollama running with a local model"]
+    fn suggest_and_answer_on_this_computers_ollama() {
+        let view = View {
+            models: models().unwrap(),
+            ..View::default()
+        };
+        let model = view.model(None).expect("a local model").clone();
+        let documents = [(
+            "Script".to_owned(),
+            "## Sobre mí
+- Backend, 7 años, Python y Go
+- Lidero un equipo de 4
+             ## Historias
+### Migración de pagos a colas
+- 2025, errores -80 %, sin caídas"
+                .to_owned(),
+        )];
+        let conversation =
+            "Others: Gracias por venir. Cuéntame un proyecto del que estés orgulloso.
+             Me: Claro.
+Others: Y luego, ¿cómo invertirías una lista enlazada?";
+        let _ = chat(
+            &model,
+            vec![json!({ "role": "user", "content": "hola" })],
+            |_| {},
+        );
+        for action in Action::ALL {
+            let messages =
+                crate::teleprompter::prompts::messages(action, "es", conversation, &documents);
+            let started = std::time::Instant::now();
+            let mut first = None;
+            let answer = chat(&model, messages, |_| {
+                first.get_or_insert(started.elapsed());
+            })
+            .unwrap();
+            eprintln!(
+                "=== {} on {}: first after {first:?}, all after {:?}
+{answer}
+",
+                action.label(),
+                model.name,
+                started.elapsed()
+            );
+        }
     }
 
     /// [`chat`] against `address` instead of Ollama's port.

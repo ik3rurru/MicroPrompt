@@ -139,7 +139,7 @@ pub(crate) enum ShortcutTarget {
     /// Toggle mode's cancel shortcut.
     Cancel,
     /// MicroPrompt: Labs › Teleprompter (Linux and Windows only).
-    Teleprompter,
+    Teleprompter(crate::app_settings::TeleprompterKey),
     /// Labs › Screenshots.
     Screenshot,
 }

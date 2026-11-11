@@ -84,6 +84,7 @@ pub(in crate::rune_ui) fn button_for(ui: &Ui, p: Paint) -> El {
                 let pane = &mut ui.platform.teleprompter_script;
                 pane.script = None;
                 pane.interview = None;
+                share(pane);
             },
         );
     }
@@ -151,7 +152,26 @@ pub(in crate::rune_ui) fn poll(state: &mut PlatformState) -> bool {
             state.teleprompter.error = Some(tr_fill("Couldn't open it: {}", &error));
         }
     }
+    share(&state.teleprompter_script);
     true
+}
+
+/// Hands the open script and its documents to the assistant, which reads
+/// them with every action (AS-03).
+fn share(pane: &ScriptPane) {
+    let script = pane.script.iter().map(|script| ("Script", script));
+    let documents = pane.interview.iter().flat_map(|interview| {
+        DOCUMENTS
+            .iter()
+            .zip(&interview.documents)
+            .filter_map(|((name, _), document)| Some((*name, document.as_ref()?)))
+    });
+    crate::teleprompter::assistant::set_documents(
+        script
+            .chain(documents)
+            .map(|(name, document)| (name.to_owned(), document.text.clone()))
+            .collect(),
+    );
 }
 
 /// The script at `path` as an interview, with the documents beside it, when

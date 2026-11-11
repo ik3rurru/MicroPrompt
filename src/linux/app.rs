@@ -59,8 +59,8 @@ pub(crate) enum ShortcutTarget {
     RawDictation,
     /// Toggle mode's cancel shortcut.
     Cancel,
-    /// MicroPrompt: Labs › Teleprompter's start-and-stop shortcut.
-    Teleprompter,
+    /// MicroPrompt: one of Labs › Teleprompter's own shortcuts.
+    Teleprompter(crate::app_settings::TeleprompterKey),
 }
 
 struct PreparedTranscription {
@@ -1151,8 +1151,8 @@ impl LinuxDesktopHost {
                             settings.raw_dictation_hotkey = Some(binding)
                         }
                         ShortcutTarget::Cancel => settings.cancel_hotkey = binding,
-                        ShortcutTarget::Teleprompter => {
-                            settings.labs.teleprompter_hotkey = Some(binding)
+                        ShortcutTarget::Teleprompter(key) => {
+                            *settings.labs.teleprompter_key_mut(key) = Some(binding)
                         }
                     }
                 })

@@ -1,6 +1,7 @@
 //! A session as a thread (MicroPrompt, AS-02): its segments joined into
 //! messages, one per speaker until the turn changes or they pause, each
-//! used by the assistant or left out ([`View::unused`]), and the text the
+//! used by the assistant or left out ([`View::unused`]); the assistant's
+//! answers between them where they were asked (AS-03); and the text the
 //! assistant reads ([`for_ai`]).
 
 use super::View;
@@ -17,8 +18,11 @@ pub(crate) const BUDGET_CHARS: usize = 16_000;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Message {
     /// Its first segment's index: the message keeps it as segments join,
-    /// so a message left out stays left out.
+    /// so a message left out stays left out. An answer's is the segment it
+    /// follows.
     pub first: usize,
+    /// The assistant's answer it shows ([`View::answers`]), if it is one.
+    pub answer: Option<usize>,
     pub speaker: Option<Speaker>,
     /// Its closed segments, then the words still being heard.
     pub text: String,
@@ -40,7 +44,16 @@ pub(crate) fn messages(view: &View) -> Vec<Message> {
             _ => false,
         };
         previous_end = time.map(|(_, end)| end);
-        push(&mut messages, view, index, speaker, segment.trim(), paused);
+        // An answer asked here ends the message before it.
+        let asked = view.answers.iter().any(|answer| answer.after == index);
+        push(
+            &mut messages,
+            view,
+            index,
+            speaker,
+            segment.trim(),
+            paused || asked,
+        );
     }
     let stable = view.stable.trim_start();
     if !format!("{stable}{}", view.tentative).trim().is_empty() {
@@ -62,7 +75,36 @@ pub(crate) fn messages(view: &View) -> Vec<Message> {
         };
         last.text.push_str(guess);
     }
-    messages
+    with_answers(messages, view)
+}
+
+/// `speech` with each answer after the messages heard before it was asked.
+fn with_answers(speech: Vec<Message>, view: &View) -> Vec<Message> {
+    let mut all = Vec::with_capacity(speech.len() + view.answers.len());
+    let mut answers = view.answers.iter().enumerate().peekable();
+    for message in speech {
+        while let Some((index, answer)) = answers.next_if(|(_, it)| it.after <= message.first) {
+            all.push(answer_message(index, answer));
+        }
+        all.push(message);
+    }
+    all.extend(answers.map(|(index, answer)| answer_message(index, answer)));
+    all
+}
+
+fn answer_message(index: usize, answer: &super::Answer) -> Message {
+    let text = answer
+        .error
+        .clone()
+        .unwrap_or_else(|| answer.text.trim().to_owned());
+    Message {
+        first: answer.after,
+        answer: Some(index),
+        speaker: None,
+        guess_from: text.len(),
+        text,
+        used: answer.used,
+    }
 }
 
 /// `text` (segment `index`'s) onto the last message, or as a new one.
@@ -84,6 +126,7 @@ fn push(
         }
         _ => messages.push(Message {
             first: index,
+            answer: None,
             speaker,
             text: text.to_owned(),
             guess_from: text.len(),
@@ -93,13 +136,23 @@ fn push(
 }
 
 /// The used messages the assistant reads, one a line under its speaker's
-/// name, oldest first; when they pass `budget` characters the oldest are
-/// dropped.
-pub(crate) fn for_ai(view: &View, budget: usize) -> String {
+/// name (`AI:` for its finished answers, with `answers`), oldest first;
+/// when they pass `budget` characters the oldest are dropped.
+pub(crate) fn for_ai(view: &View, budget: usize, answers: bool) -> String {
     let mut lines = Vec::new();
     let mut used = 0;
-    for message in messages(view).iter().rev().filter(|it| it.used) {
-        let line = super::labelled(message.speaker, message.text.trim());
+    let read = |message: &&Message| {
+        message.used
+            && message.answer.is_none_or(|index| {
+                let answer = &view.answers[index];
+                answers && answer.done && answer.error.is_none()
+            })
+    };
+    for message in messages(view).iter().rev().filter(read) {
+        let line = match message.answer {
+            Some(_) => format!("AI: {}", message.text.trim()),
+            None => super::labelled(message.speaker, message.text.trim()),
+        };
         used += line.len() + 1;
         if used > budget {
             break;
@@ -182,10 +235,50 @@ mod tests {
         let me = crate::desktop::i18n::tr("Me");
         let others = crate::desktop::i18n::tr("Others");
         assert_eq!(
-            for_ai(&view, BUDGET_CHARS),
+            for_ai(&view, BUDGET_CHARS, false),
             format!("{others}: Primera.\n{others}: Segunda.")
         );
-        assert!(!for_ai(&view, BUDGET_CHARS).contains(me));
-        assert_eq!(for_ai(&view, 20), format!("{others}: Segunda."));
+        assert!(!for_ai(&view, BUDGET_CHARS, false).contains(me));
+        assert_eq!(for_ai(&view, 20, false), format!("{others}: Segunda."));
+    }
+
+    #[test]
+    fn an_answer_follows_what_was_heard_when_it_was_asked() {
+        let mut view = view(&[
+            (Some(Others), 0, 2_000, "¿Qué es un índice?"),
+            (Some(Others), 2_200, 3_000, "Y otra cosa."),
+        ]);
+        let answer = |after, text: &str, done| crate::teleprompter::Answer {
+            action: crate::teleprompter::prompts::Action::Answer,
+            after,
+            text: text.into(),
+            done,
+            error: None,
+            used: true,
+        };
+        view.answers = vec![answer(1, "Una estructura que acelera búsquedas.", true)];
+        let all = messages(&view);
+        let shown: Vec<_> = all.iter().map(|it| (it.answer, it.text.as_str())).collect();
+        assert_eq!(
+            shown,
+            [
+                (None, "¿Qué es un índice?"),
+                (Some(0), "Una estructura que acelera búsquedas."),
+                (None, "Y otra cosa."),
+            ]
+        );
+        let others = crate::desktop::i18n::tr("Others");
+        assert_eq!(
+            for_ai(&view, BUDGET_CHARS, true),
+            format!(
+                "{others}: ¿Qué es un índice?
+AI: Una estructura que acelera búsquedas.
+{others}: Y otra cosa."
+            )
+        );
+        assert!(!for_ai(&view, BUDGET_CHARS, false).contains("AI:"));
+        view.answers.push(answer(2, "Escribiendo", false));
+        assert!(!for_ai(&view, BUDGET_CHARS, true).contains("Escribiendo"));
+        assert_eq!(messages(&view).last().unwrap().answer, Some(1));
     }
 }

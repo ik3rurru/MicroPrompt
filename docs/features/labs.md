@@ -64,17 +64,22 @@ Feature             Pane  Toggle (settings.json, hex settings)   On: what it doe
 ├── Assistant       no    labs.assistant        (Linux, Windows)  MicroPrompt: Teleprompter shows a Local model card: whether Ollama runs on this
 │                                        computer (127.0.0.1:11434, loopback HTTP; its cloud models are left out, so nothing leaves it),
 │                                        its installed models to pick from (`labs.assistant_model`, default gemma4:12b, else the first
-│                                        installed), and Try it, which asks for a one-sentence summary of the thread (an introduction
-│                                        before anything is said), streaming in; Check again looks again after Ollama starts. The
-│                                        session reads as a thread: a speaker's segments join into one message until the turn changes
-│                                        or 2.5 s of pause (src/teleprompter/conversation.rs), and with this lab on each message has a
-│                                        Use in AI switch; one switched off shows faint and is left out of what the assistant reads
-│                                        (newest messages within 16,000 characters, the open words included), until the next session.
-│                                        It is the client and context the assistant's actions (AS-03…) and EN-03 use
-│                                        (src/teleprompter/assistant.rs, src/rune_ui/labs/teleprompter/assistant.rs; scenes
-│                                        teleprompter-assistant, teleprompter-assistant-off, teleprompter-thread; model list,
-│                                        streaming, messages, and the context unit-tested; the switches not clicked in the running
-│                                        app; no golden)
+│                                        installed; looked for once a run, Check again after Ollama starts), and two actions (AS-03):
+│                                        Suggest (what to say now: a few spoken sentences, key points, likely follow-ups; reads the
+│                                        conversation) and Answer (what was asked, in a format per kind: code, design, behavioral,
+│                                        concept, small talk; also reads earlier answers). Both read the open script and its CV, offer,
+│                                        and company notes, answer in the session's language, and stream into the thread after what was
+│                                        heard when asked, one at a time; Windows shortcuts `labs.assistant_suggest_hotkey` and
+│                                        `labs.assistant_answer_hotkey` (unbound, system hotkeys beside the Teleprompter's). A session
+│                                        start loads the model (kept 30 min). The session reads as a thread: a speaker's segments join
+│                                        into one message until the turn changes or 2.5 s of pause (src/teleprompter/conversation.rs);
+│                                        each message and answer has a Use in AI switch; one switched off shows faint and is left out of
+│                                        what the assistant reads (newest within 16,000 characters, the open words included), until the
+│                                        next session (src/teleprompter/assistant.rs, prompts.rs, src/rune_ui/labs/teleprompter/;
+│                                        scenes teleprompter-assistant, -assistant-idle, -assistant-off, -thread; prompts, messages,
+│                                        answers in the thread, and the context unit-tested; an ignored test runs both actions on this
+│                                        computer's Ollama (gemma4:12b warm: first words 0.15-0.27 s, all 1-1.3 s); buttons and
+│                                        shortcuts not pressed in the running app; no golden)
 ├── Live chapters   no    labs.live_chapters           (macOS)   chapters a meeting while it records, boundary pass after Stop
 ├── Vocabulary biasing no labs.vocabulary_biasing                Parakeet transcription biased toward the vocabulary (#452/#457)
 ├── Switch model with keyboard language  no  keyboard_model_switching.enabled  (macOS, Windows, X11)

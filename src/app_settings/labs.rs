@@ -89,6 +89,10 @@ pub struct LabsSettings {
     pub teleprompter: bool,
     /// The Teleprompter's start-and-stop shortcut (Windows); unbound by default.
     pub teleprompter_hotkey: Option<crate::app_settings::HotkeyBinding>,
+    /// MicroPrompt: Labs › Assistant's Suggest shortcut (Windows); unbound by default.
+    pub assistant_suggest_hotkey: Option<crate::app_settings::HotkeyBinding>,
+    /// MicroPrompt: Labs › Assistant's Answer shortcut (Windows); unbound by default.
+    pub assistant_answer_hotkey: Option<crate::app_settings::HotkeyBinding>,
     /// With `labs.annotate_replay` on, keeps a rolling 15 s display buffer via `SCClipBufferingOutput` (macOS 27+).
     pub annotate_replay: bool,
     /// Calls in more apps (Signal, Telegram, WeChat, LINE, Webex, Element, Phone) and on more websites are offered and named.
@@ -110,6 +114,48 @@ pub struct LabsSettings {
 
 /// The idle times Labs › Unload model when idle offers, in minutes.
 pub const UNLOAD_IDLE_MINUTES: [u32; 4] = [5, 15, 30, 60];
+
+impl LabsSettings {
+    /// One of the Teleprompter's own shortcuts.
+    pub fn teleprompter_key(&self, key: TeleprompterKey) -> Option<&super::HotkeyBinding> {
+        match key {
+            TeleprompterKey::Toggle => self.teleprompter_hotkey.as_ref(),
+            TeleprompterKey::Suggest => self.assistant_suggest_hotkey.as_ref(),
+            TeleprompterKey::Answer => self.assistant_answer_hotkey.as_ref(),
+        }
+    }
+
+    pub fn teleprompter_key_mut(
+        &mut self,
+        key: TeleprompterKey,
+    ) -> &mut Option<super::HotkeyBinding> {
+        match key {
+            TeleprompterKey::Toggle => &mut self.teleprompter_hotkey,
+            TeleprompterKey::Suggest => &mut self.assistant_suggest_hotkey,
+            TeleprompterKey::Answer => &mut self.assistant_answer_hotkey,
+        }
+    }
+}
+
+/// MicroPrompt: the Teleprompter's own shortcuts (Windows system hotkeys,
+/// `crate::teleprompter::hotkey`): start and stop, and with Labs ›
+/// Assistant its Suggest and Answer.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TeleprompterKey {
+    Toggle,
+    Suggest,
+    Answer,
+}
+
+impl TeleprompterKey {
+    pub const ALL: [Self; 3] = [Self::Toggle, Self::Suggest, Self::Answer];
+
+    /// Whether `settings` turn it on: its Lab, and the assistant's for its
+    /// actions.
+    pub fn on(self, settings: &super::AppSettings) -> bool {
+        settings.labs.teleprompter && (self == Self::Toggle || settings.labs.assistant)
+    }
+}
 
 impl Default for LabsSettings {
     fn default() -> Self {
@@ -165,7 +211,29 @@ impl Default for LabsSettings {
             assistant: false,
             assistant_model: None,
             teleprompter_hotkey: None,
+            assistant_suggest_hotkey: None,
+            assistant_answer_hotkey: None,
             groups: std::collections::BTreeMap::new(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_assistants_shortcuts_need_its_lab_and_the_teleprompters() {
+        let mut settings = crate::app_settings::AppSettings::default();
+        let on = |settings: &crate::app_settings::AppSettings| {
+            TeleprompterKey::ALL.map(|key| key.on(settings))
+        };
+        assert_eq!(on(&settings), [false; 3]);
+        settings.labs.teleprompter = true;
+        assert_eq!(on(&settings), [true, false, false]);
+        settings.labs.assistant = true;
+        assert_eq!(on(&settings), [true; 3]);
+        settings.labs.teleprompter = false;
+        assert_eq!(on(&settings), [false; 3]);
     }
 }

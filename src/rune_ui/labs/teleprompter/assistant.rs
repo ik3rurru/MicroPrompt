@@ -1,10 +1,9 @@
 //! The Teleprompter pane's assistant card (MicroPrompt, Labs › Assistant):
 //! whether Ollama runs, the model that answers (`labs.assistant_model`), and
-//! Try it, a one-sentence summary of the thread the assistant may read (an
-//! introduction before anything is said), streaming in. The model is
-//! [`crate::teleprompter::assistant`].
+//! Suggest and Answer (AS-03), whose answers stream into the thread. The
+//! model is [`crate::teleprompter::assistant`].
 
-use rune::{El, col, row, text};
+use rune::{El, col, row};
 
 use crate::desktop::i18n::tr;
 use crate::rune_ui::Ui;
@@ -13,6 +12,7 @@ use crate::rune_ui::controls::{
 };
 use crate::rune_ui::platform::PlatformState;
 use crate::teleprompter::assistant::{self, Status};
+use crate::teleprompter::prompts::Action;
 
 /// Copies the assistant in when it changed. True when it did.
 pub(in crate::rune_ui) fn poll(state: &mut PlatformState) -> bool {
@@ -72,8 +72,8 @@ pub(in crate::rune_ui) fn card_for(ui: &Ui, p: Paint) -> Option<El> {
         Some((status.to_owned(), color)),
         control,
     )];
-    if let Some(model) = model.cloned() {
-        rows.push(answer(p, view, model));
+    if model.is_some() {
+        rows.push(actions(ui, p));
     }
     Some(
         col()
@@ -84,60 +84,35 @@ pub(in crate::rune_ui) fn card_for(ui: &Ui, p: Paint) -> Option<El> {
     )
 }
 
-/// Try it, and the answer as it streams in.
-fn answer(p: Paint, view: &assistant::View, model: assistant::Model) -> El {
-    let label = if view.asking {
-        tr("Answering…")
-    } else {
-        tr("Try it")
-    };
-    let ask = button(
-        p,
-        "assistant-try",
-        label,
-        ButtonKind::Secondary,
-        move |ui, _| {
-            if !ui.platform.teleprompter_assistant.asking {
-                assistant::try_it(model.clone(), question(&ui.platform.teleprompter));
-            }
-        },
-    );
-    let said = view
-        .error
-        .clone()
-        .map(|error| (error, p.danger()))
-        .or_else(|| (!view.answer.is_empty()).then(|| (view.answer.trim().to_owned(), p.text())));
-    let said = said.map(|(copy, color)| {
-        text(copy)
-            .key("assistant-answer")
-            .font(p.k.ty.ui)
-            .color(color)
-            .wrap()
-            .grow(1.0)
-            .shrink()
-    });
-    row()
-        .key("assistant-try-row")
+/// Suggest and Answer; the one answering says so, and neither starts
+/// another until it is done.
+fn actions(ui: &Ui, p: Paint) -> El {
+    let answering = ui
+        .platform
+        .teleprompter
+        .answers
+        .iter()
+        .find(|answer| !answer.done)
+        .map(|answer| answer.action);
+    let mut row = row()
+        .key("assistant-actions")
         .px(METRICS.row_px)
         .py(12.0)
-        .gap(12.0)
-        .center_y()
-        .child(ask)
-        .children(said)
-}
-
-/// Try it's question: a one-sentence summary of what the thread lets the
-/// assistant read, or, before anything is said, an introduction.
-fn question(session: &crate::teleprompter::View) -> String {
-    use crate::teleprompter::conversation::{BUDGET_CHARS, for_ai};
-    let conversation = for_ai(session, BUDGET_CHARS);
-    if conversation.is_empty() {
-        return tr("Introduce yourself in one short sentence.").into();
+        .gap(8.0)
+        .center_y();
+    for action in Action::ALL {
+        let label = if answering == Some(action) {
+            tr("Answering…")
+        } else {
+            tr(action.label())
+        };
+        row = row.child(button(
+            p,
+            &format!("assistant-{}", action.label().to_lowercase()),
+            label,
+            ButtonKind::Secondary,
+            move |_, _| assistant::ask(action),
+        ));
     }
-    format!(
-        "{}
-
-{conversation}",
-        tr("Summarize this conversation in one sentence:")
-    )
+    row
 }

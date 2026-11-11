@@ -91,8 +91,8 @@ pub(crate) enum ShortcutTarget {
     RawDictation,
     /// Toggle mode's cancel shortcut.
     Cancel,
-    /// MicroPrompt: Labs › Teleprompter's start-and-stop shortcut.
-    Teleprompter,
+    /// MicroPrompt: one of Labs › Teleprompter's own shortcuts.
+    Teleprompter(crate::app_settings::TeleprompterKey),
 }
 
 /// What the runtime last published for the window.

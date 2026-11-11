@@ -276,6 +276,10 @@ const PATHS: &[(&str, &str)] = &[
         "teleprompter-assistant",
         "Linux & Windows/Teleprompter/Assistant",
     ),
+    (
+        "teleprompter-assistant-idle",
+        "Linux & Windows/Teleprompter/Assistant · before a session",
+    ),
     ("teleprompter-thread", "Linux & Windows/Teleprompter/Thread"),
     (
         "teleprompter-assistant-off",

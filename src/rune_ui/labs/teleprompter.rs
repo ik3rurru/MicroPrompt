@@ -19,6 +19,8 @@ use crate::teleprompter::source::Speaker;
 
 /// Subtitles read from across the room, not like a settings row.
 const CAPTION: TextStyle = TextStyle::new(26.0, 450.0).lh(36.0);
+/// The assistant's answers: read at a glance during a call, below captions.
+const ANSWER: TextStyle = TextStyle::new(20.0, 450.0).lh(30.0);
 
 /// The pane shows while its Lab is on, where the listener feeds it.
 pub(in crate::rune_ui) fn shown(ui: &Ui) -> bool {
@@ -62,15 +64,44 @@ pub(in crate::rune_ui) fn pane(ui: &Ui, p: Paint) -> (Vec<El>, El) {
         };
         return (actions, page);
     }
-    let rows = crate::rune_ui::general::shortcut_rows(
+    use crate::app_settings::TeleprompterKey;
+    use crate::rune_ui::ShortcutTarget::Teleprompter;
+    let mut rows = crate::rune_ui::general::shortcut_rows(
         ui,
         p,
         "teleprompter-shortcut",
         &crate::rune_ui::icons::KEYBOARD,
         tr("Start and stop the session"),
-        crate::rune_ui::ShortcutTarget::Teleprompter,
+        Teleprompter(TeleprompterKey::Toggle),
         Some(tr("Works with the window closed")),
     );
+    // With the assistant on, its two actions from any app.
+    if TeleprompterKey::Suggest.on(&ui.settings) {
+        for (key, row, title, purpose) in [
+            (
+                TeleprompterKey::Suggest,
+                "assistant-suggest-shortcut",
+                "Suggest",
+                "What to say now, from the conversation",
+            ),
+            (
+                TeleprompterKey::Answer,
+                "assistant-answer-shortcut",
+                "Answer",
+                "The full answer to what was asked",
+            ),
+        ] {
+            rows.extend(crate::rune_ui::general::shortcut_rows(
+                ui,
+                p,
+                row,
+                &crate::rune_ui::icons::KEYBOARD,
+                tr(title),
+                Teleprompter(key),
+                Some(tr(purpose)),
+            ));
+        }
+    }
     let shortcut = col()
         .key("teleprompter-settings")
         .px(METRICS.gutter - METRICS.row_px)
@@ -134,7 +165,7 @@ fn body(p: Paint, view: &View, assistant: bool) -> El {
             .pb(8.0)
     });
     let open = format!("{}{}", view.stable, view.tentative);
-    if view.segments.is_empty() && open.trim().is_empty() {
+    if view.segments.is_empty() && open.trim().is_empty() && view.answers.is_empty() {
         let hint = if view.running {
             tr("Listening… your words show here")
         } else {
@@ -156,6 +187,11 @@ fn body(p: Paint, view: &View, assistant: bool) -> El {
     // assistant on, each has a switch that leaves it out of what it reads.
     let mut last = None;
     for message in crate::teleprompter::conversation::messages(view) {
+        if let Some(index) = message.answer {
+            lines = lines.child(answer(p, view, index, &message, assistant));
+            last = None;
+            continue;
+        }
         let first = message.first;
         let named = message.speaker.filter(|speaker| last != Some(*speaker));
         last = message.speaker.or(last);
@@ -177,7 +213,12 @@ fn body(p: Paint, view: &View, assistant: bool) -> El {
             };
             text(name).font(p.k.ty.ui).color(p.faint())
         });
-        let switch = assistant.then(|| use_in_ai(p, first, message.used));
+        let used = message.used;
+        let switch = assistant.then(|| {
+            use_in_ai(p, used, move || {
+                crate::teleprompter::use_in_ai(first, !used)
+            })
+        });
         let header = (name.is_some() || switch.is_some()).then(|| {
             row()
                 .key("header")
@@ -250,8 +291,57 @@ fn language(ui: &Ui, p: Paint) -> El {
     )
 }
 
-/// A message's switch: the assistant reads the message while on.
-fn use_in_ai(p: Paint, first: usize, used: bool) -> El {
+/// An answer of the assistant's in the thread: its action's name, its
+/// switch, and its Markdown, larger than the UI to read during a call.
+fn answer(
+    p: Paint,
+    view: &View,
+    index: usize,
+    message: &crate::teleprompter::conversation::Message,
+    assistant: bool,
+) -> El {
+    let Some(answer) = view.answers.get(index) else {
+        return col().key(format!("answer-{index}"));
+    };
+    let used = message.used;
+    let switch = assistant.then(|| {
+        use_in_ai(p, used, move || {
+            crate::teleprompter::assistant::use_answer_in_ai(index, !used)
+        })
+    });
+    let name = if answer.done {
+        tr(answer.action.label()).to_owned()
+    } else {
+        format!("{}  ·  {}", tr(answer.action.label()), tr("Answering…"))
+    };
+    let header = row()
+        .key("header")
+        .gap(8.0)
+        .center_y()
+        .child(text(name).font(p.k.ty.ui).color(p.accent()))
+        .child(row().key("space").grow(1.0))
+        .children(switch);
+    let body = if answer.error.is_some() {
+        text(message.text.clone())
+            .font(ANSWER)
+            .color(p.danger())
+            .wrap()
+    } else {
+        let style = rune_kit::MarkdownStyle::from_kit(p.k).body_font(ANSWER);
+        let style = if used { style } else { style.text(p.faint()) };
+        rune_kit::Markdown::new(&message.text).render(&style)
+    };
+    crate::rune_ui::controls::raised(p, &format!("answer-{index}"))
+        .gap(6.0)
+        .px(18.0)
+        .py(14.0)
+        .child(header)
+        .child(body.key("answer-text"))
+}
+
+/// A message's switch: the assistant reads the message while on; `flip`
+/// turns it over.
+fn use_in_ai(p: Paint, used: bool, flip: impl Fn() + 'static) -> El {
     row()
         .key("use-in-ai")
         .role("switch")
@@ -259,5 +349,5 @@ fn use_in_ai(p: Paint, first: usize, used: bool) -> El {
         .checked(used)
         .focusable(true)
         .child(row_switch(p, used))
-        .on_press(move |_: &mut Ui| crate::teleprompter::use_in_ai(first, !used))
+        .on_press(move |_: &mut Ui| flip())
 }

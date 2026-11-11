@@ -250,7 +250,9 @@ pub(super) fn shortcut_rows(
     let optional = second
         || matches!(
             target,
-            ShortcutTarget::PasteLast | ShortcutTarget::RawDictation | ShortcutTarget::Teleprompter
+            ShortcutTarget::PasteLast
+                | ShortcutTarget::RawDictation
+                | ShortcutTarget::Teleprompter(_)
         );
     if optional && s::binding(&ui.settings, target).is_some() {
         control = control.child(icon_button(
@@ -261,7 +263,9 @@ pub(super) fn shortcut_rows(
             move |ui: &mut Ui| {
                 ui.update(|settings| match target {
                     ShortcutTarget::RawDictation => settings.raw_dictation_hotkey = None,
-                    ShortcutTarget::Teleprompter => settings.labs.teleprompter_hotkey = None,
+                    ShortcutTarget::Teleprompter(key) => {
+                        *settings.labs.teleprompter_key_mut(key) = None
+                    }
                     _ if second => settings.second_dictation_hotkey = None,
                     _ => settings.paste_last_hotkey = None,
                 });

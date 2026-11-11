@@ -793,15 +793,50 @@ pub(super) const SCENES: &[Scene] = &[
                 model("gemma4:12b"),
                 model("qwen3.5:4b"),
             ],
-            answer: "Hola, soy Gemma, un modelo de lenguaje".into(),
-            asking: true,
             ..View::default()
+        };
+        use crate::teleprompter::prompts::Action;
+        use crate::teleprompter::source::Speaker::{Me, Others};
+        let answer = |action, after, text: &str, done| crate::teleprompter::Answer {
+            action,
+            after,
+            text: text.into(),
+            done,
+            error: None,
+            used: true,
         };
         ui.platform.teleprompter = crate::teleprompter::View {
             running: true,
-            segments: vec!["Hola, esto es una prueba de subtítulos en directo.".into()],
-            stable: "Y el asistente".into(),
-            tentative: " responde".into(),
+            segments: vec![
+                "¿Me cuentas un proyecto del que estés orgulloso?".into(),
+                "Pues el año pasado migramos los pagos a colas.".into(),
+            ],
+            speakers: vec![Some(Others), Some(Me)],
+            times: vec![(0, 3_000), (9_000, 12_000)],
+            answers: vec![
+                answer(
+                    Action::Suggest,
+                    1,
+                    concat!(
+                        "**Say this:** El año pasado lideré la migración de los pagos a colas: ",
+                        "bajamos los errores un 80 % sin parar el servicio.
+
+",
+                        "**Key points:**
+- Liderazgo de 4 personas
+- Cero caídas
+",
+                        "- Métricas antes y después",
+                    ),
+                    true,
+                ),
+                answer(
+                    Action::Answer,
+                    2,
+                    "**Understood:** qué aprendiste de esa migración",
+                    false,
+                ),
+            ],
             ..Default::default()
         };
     }),
@@ -856,6 +891,32 @@ pub(super) const SCENES: &[Scene] = &[
         ui.pane = Pane::Teleprompter;
         ui.platform.teleprompter_assistant.status =
             crate::teleprompter::assistant::Status::NotRunning;
+    }),
+    // MicroPrompt: before a session with Labs › Assistant on: the
+    // Teleprompter's shortcut and the assistant's two.
+    ("teleprompter-assistant-idle", |ui| {
+        *ui = fixture(DesktopShortcuts::Registered);
+        ui.platform = platform::PlatformState::preview(platform::Capabilities::WINDOWS);
+        ui.host = platform::PlatformHost::Fixture(Vec::new());
+        ui.settings.labs.teleprompter = true;
+        ui.settings.labs.assistant = true;
+        ui.settings.labs.assistant_suggest_hotkey = serde_json::from_value(serde_json::json!({
+            "keys": [
+                { "modifier": "control", "side": "any" },
+                { "modifier": "option", "side": "any" },
+                { "code": 1, "label": "S" },
+            ]
+        }))
+        .ok();
+        ui.pane = Pane::Teleprompter;
+        ui.platform.teleprompter_assistant = crate::teleprompter::assistant::View {
+            status: crate::teleprompter::assistant::Status::Running,
+            models: vec![crate::teleprompter::assistant::Model {
+                name: "gemma4:12b".into(),
+                thinks: true,
+            }],
+            ..Default::default()
+        };
     }),
     // MicroPrompt: a multi-page Markdown script, opened to read.
     ("teleprompter-script", |ui| {

@@ -1131,8 +1131,8 @@ pub enum HotkeySlot {
     Cancel,
     /// Labs › Screenshots (macOS).
     Screenshot,
-    /// MicroPrompt: Labs › Teleprompter's start-and-stop shortcut.
-    Teleprompter,
+    /// MicroPrompt: one of Labs › Teleprompter's own shortcuts.
+    Teleprompter(TeleprompterKey),
 }
 
 impl AppSettings {
@@ -1158,11 +1158,13 @@ impl AppSettings {
         if slot != HotkeySlot::Cancel {
             others.push(self.cancel_hotkey.clone());
         }
-        if slot != HotkeySlot::Teleprompter
-            && self.labs.teleprompter
-            && let Some(teleprompter) = &self.labs.teleprompter_hotkey
-        {
-            others.push(teleprompter.clone());
+        for key in TeleprompterKey::ALL {
+            if slot != HotkeySlot::Teleprompter(key)
+                && key.on(self)
+                && let Some(teleprompter) = self.labs.teleprompter_key(key)
+            {
+                others.push(teleprompter.clone());
+            }
         }
         if slot != HotkeySlot::SecondDictation
             && cfg!(target_os = "macos")
