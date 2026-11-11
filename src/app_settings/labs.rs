@@ -97,6 +97,11 @@ pub struct LabsSettings {
     pub teleprompter_source: crate::teleprompter::source::Source,
     /// MicroPrompt: the Teleprompter opens an interview script by sections, with its documents (Linux, Windows).
     pub interview: bool,
+    /// MicroPrompt: a local model (Ollama) answers in the Teleprompter (Linux, Windows).
+    pub assistant: bool,
+    /// MicroPrompt: the Ollama model the assistant uses; left out of the file while unset, when it is `teleprompter::assistant::DEFAULT_MODEL`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub assistant_model: Option<String>,
     /// Settings › Labs' groups opened or closed by hand, by `labs::Group`
     /// id; a group not here is open while it holds a lab that's on.
     #[serde(skip_serializing_if = "std::collections::BTreeMap::is_empty")]
@@ -157,6 +162,8 @@ impl Default for LabsSettings {
             meeting_import: false,
             teleprompter: false,
             interview: false,
+            assistant: false,
+            assistant_model: None,
             teleprompter_hotkey: None,
             groups: std::collections::BTreeMap::new(),
         }

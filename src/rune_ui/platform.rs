@@ -332,6 +332,8 @@ pub(super) struct PlatformState {
     pub(super) activity_log: Option<std::path::PathBuf>,
     /// The Teleprompter pane's session (`crate::teleprompter::view`).
     pub(super) teleprompter: crate::teleprompter::View,
+    /// Labs › Assistant's card (`crate::teleprompter::assistant::view`).
+    pub(super) teleprompter_assistant: crate::teleprompter::assistant::View,
     /// The Teleprompter pane's script (MicroPrompt).
     pub(super) teleprompter_script: super::labs::teleprompter_script::ScriptPane,
     /// The Scrawl pane, while the `capture` experiment is on; `None` hides
@@ -397,6 +399,7 @@ impl PlatformState {
             hud: HudLab::default(),
             activity_log: None,
             teleprompter: Default::default(),
+            teleprompter_assistant: Default::default(),
             teleprompter_script: Default::default(),
             #[cfg(hex_capture)]
             scrawl: None,

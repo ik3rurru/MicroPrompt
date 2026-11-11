@@ -11,6 +11,7 @@ mod group;
 mod screenshots;
 mod store;
 pub(super) mod teleprompter;
+pub(super) mod teleprompter_assistant;
 pub(super) mod teleprompter_script;
 
 use rune::{El, Icon, TextEdit, Tx, row, text};
@@ -372,6 +373,12 @@ fn rows(ui: &Ui) -> Vec<Row> {
             None,
             tr("Interview prep"),
             tr("Teleprompter opens an interview script by sections, with your CV, the offer, and company notes"),
+        ));
+        rows.push(row(
+            Feature::Assistant,
+            None,
+            tr("Assistant"),
+            tr("A local model on this computer answers in Teleprompter, through Ollama; nothing leaves it"),
         ));
     }
     rows.push(row(
@@ -785,6 +792,7 @@ fn row_key(lab: Lab) -> &'static str {
         Feature::MeetingImport => "lab-meeting-import",
         Feature::Teleprompter => "lab-teleprompter",
         Feature::Interview => "lab-interview",
+        Feature::Assistant => "lab-assistant",
     }
 }
 

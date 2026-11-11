@@ -116,10 +116,11 @@ pub enum Feature {
     MeetingImport,
     Teleprompter,
     Interview,
+    Assistant,
 }
 
 impl Feature {
-    pub const ALL: [Self; 52] = [
+    pub const ALL: [Self; 53] = [
         Self::Meetings,
         Self::VoiceFilter,
         Self::Playground,
@@ -172,6 +173,7 @@ impl Feature {
         Self::MeetingImport,
         Self::Teleprompter,
         Self::Interview,
+        Self::Assistant,
     ];
 
     /// The features this OS and build have.
@@ -248,6 +250,7 @@ impl Feature {
             | Self::MeetingImport
             | Self::Teleprompter
             | Self::Interview
+            | Self::Assistant
             | Self::NotchIndicator => Audience::Everyone,
         }
     }
@@ -305,6 +308,7 @@ impl Feature {
             Self::MoreCallApps | Self::SettingsSearch | Self::MeetingImport => 20261106,
             Self::Teleprompter => 20261107,
             Self::Interview => 20261109,
+            Self::Assistant => 20261111,
         }
     }
 
@@ -351,7 +355,8 @@ impl Feature {
             Self::StandaloneSpecialKeys
             | Self::SkipPauses
             | Self::Teleprompter
-            | Self::Interview => {
+            | Self::Interview
+            | Self::Assistant => {
                 cfg!(any(target_os = "linux", target_os = "windows"))
             }
             Self::MouseShortcuts
@@ -457,6 +462,7 @@ impl Feature {
             Self::MeetingImport => "meeting-import",
             Self::Teleprompter => "teleprompter",
             Self::Interview => "interview",
+            Self::Assistant => "assistant",
         }
     }
 
@@ -515,6 +521,7 @@ impl Feature {
             Self::MeetingImport => "labs.meeting_import",
             Self::Teleprompter => "labs.teleprompter",
             Self::Interview => "labs.interview",
+            Self::Assistant => "labs.assistant",
         }
     }
 
@@ -657,6 +664,9 @@ impl Feature {
             Self::Interview => {
                 "Teleprompter opens an interview script by sections, with your CV, the offer, and company notes"
             }
+            Self::Assistant => {
+                "A local model on this computer answers in Teleprompter, through Ollama; nothing leaves it"
+            }
         }
     }
 
@@ -719,6 +729,7 @@ impl Feature {
             Self::MeetingImport => settings.labs.meeting_import,
             Self::Teleprompter => settings.labs.teleprompter,
             Self::Interview => settings.labs.interview,
+            Self::Assistant => settings.labs.assistant,
         }
     }
 
@@ -779,6 +790,7 @@ impl Feature {
             &mut labs.meeting_import,
             &mut labs.teleprompter,
             &mut labs.interview,
+            &mut labs.assistant,
         ]
     }
 
@@ -839,6 +851,7 @@ impl Feature {
             Self::MeetingImport => settings.labs.meeting_import = on,
             Self::Teleprompter => settings.labs.teleprompter = on,
             Self::Interview => settings.labs.interview = on,
+            Self::Assistant => settings.labs.assistant = on,
             // Off, no shortcut keeps a key only the feature allows.
             Self::StandaloneSpecialKeys => {
                 settings.labs.standalone_special_keys = on;

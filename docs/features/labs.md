@@ -61,6 +61,14 @@ Feature             Pane  Toggle (settings.json, hex settings)   On: what it doe
 │                                        (src/teleprompter/interview.rs, src/rune_ui/labs/teleprompter_script.rs; scenes
 │                                        teleprompter-interview, teleprompter-interview-stories; sections, ticks, and documents
 │                                        unit-tested; the file dialog and the clicks not exercised; no golden)
+├── Assistant       no    labs.assistant        (Linux, Windows)  MicroPrompt: Teleprompter shows a Local model card: whether Ollama runs on this
+│                                        computer (127.0.0.1:11434, loopback HTTP; its cloud models are left out, so nothing leaves it),
+│                                        its installed models to pick from (`labs.assistant_model`, default gemma4:12b, else the first
+│                                        installed), and Try it, a test question whose answer streams in; Check again looks again after
+│                                        Ollama starts. It is the client the assistant's actions (AS-03…) and EN-03 use
+│                                        (src/teleprompter/assistant.rs, src/rune_ui/labs/teleprompter_assistant.rs; scenes
+│                                        teleprompter-assistant, teleprompter-assistant-off; model list and streaming unit-tested
+│                                        against a stand-in server; no golden)
 ├── Live chapters   no    labs.live_chapters           (macOS)   chapters a meeting while it records, boundary pass after Stop
 ├── Vocabulary biasing no labs.vocabulary_biasing                Parakeet transcription biased toward the vocabulary (#452/#457)
 ├── Switch model with keyboard language  no  keyboard_model_switching.enabled  (macOS, Windows, X11)

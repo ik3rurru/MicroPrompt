@@ -19,6 +19,7 @@ use crate::control::{ControlReply, TeleprompterAction};
 use crate::history::{HistoryDraft, HistoryEntry, HistoryKind, HistorySegment};
 
 #[cfg(target_os = "windows")]
+pub(crate) mod assistant;
 pub(crate) mod hotkey;
 pub(crate) mod interview;
 pub(crate) mod language;
@@ -208,6 +209,13 @@ pub(crate) fn set_waker(wake: Arc<dyn Fn() + Send + Sync>) {
     *lock(&WAKER) = Some(wake);
 }
 
+/// Wakes the window to copy a changed view in (also the assistant's).
+fn wake() {
+    if let Some(wake) = lock(&WAKER).clone() {
+        wake();
+    }
+}
+
 /// Changes the view through `change`, then wakes the window.
 fn update(change: impl FnOnce(&mut Live)) {
     {
@@ -215,9 +223,7 @@ fn update(change: impl FnOnce(&mut Live)) {
         change(&mut live);
         live.view.generation += 1;
     }
-    if let Some(wake) = lock(&WAKER).clone() {
-        wake();
-    }
+    wake();
 }
 
 /// The pane's button: stops a running session, else starts one, on a

@@ -491,6 +491,16 @@ const KEYS: &[Key] = &[
         "Labs: Teleprompter opens an interview script by sections, with your CV, the offer, and company notes (Linux, Windows)",
     ),
     key(
+        "labs.assistant",
+        Kind::Bool,
+        "Labs: A local model on this computer answers in Teleprompter, through Ollama; nothing leaves it (Linux, Windows)",
+    ),
+    optional(
+        "labs.assistant_model",
+        Kind::Text,
+        "Labs › Assistant: the Ollama model that answers, such as qwen3.5:9b; none uses gemma4:12b",
+    ),
+    key(
         "labs.teleprompter",
         Kind::Bool,
         "Labs: hex teleprompter start, stop, and status transcribe the microphone live (Linux, Windows)",
@@ -1568,6 +1578,10 @@ mod tests {
             meetings: crate::app_settings::MeetingSettings {
                 retention: Some(crate::app_settings::MeetingRetention::Day),
                 opencode_model: Some("anthropic/claude-haiku".into()),
+                ..Default::default()
+            },
+            labs: crate::app_settings::LabsSettings {
+                assistant_model: Some("qwen3.5:9b".into()),
                 ..Default::default()
             },
             ..Default::default()

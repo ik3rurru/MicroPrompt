@@ -61,6 +61,7 @@ impl Feature {
             | Self::SettingsSearch
             | Self::Teleprompter
             | Self::Interview
+            | Self::Assistant
             | Self::Playground => Group::Dictation,
             Self::SmartSpacing
             | Self::SpokenFormatting

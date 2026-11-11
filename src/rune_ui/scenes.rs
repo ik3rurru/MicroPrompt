@@ -772,6 +772,50 @@ pub(super) const SCENES: &[Scene] = &[
             .ok();
         ui.pane = Pane::Teleprompter;
     }),
+    // MicroPrompt: Labs › Assistant with Ollama running and a test answer
+    // streaming in, beside a session.
+    ("teleprompter-assistant", |ui| {
+        use crate::teleprompter::assistant::{Model, Status, View};
+        *ui = fixture(DesktopShortcuts::Registered);
+        ui.platform = platform::PlatformState::preview(platform::Capabilities::WINDOWS);
+        ui.host = platform::PlatformHost::Fixture(Vec::new());
+        ui.settings.labs.teleprompter = true;
+        ui.settings.labs.assistant = true;
+        ui.pane = Pane::Teleprompter;
+        let model = |name: &str| Model {
+            name: name.into(),
+            thinks: true,
+        };
+        ui.platform.teleprompter_assistant = View {
+            status: Status::Running,
+            models: vec![
+                model("qwen3.5:9b"),
+                model("gemma4:12b"),
+                model("qwen3.5:4b"),
+            ],
+            answer: "Hola, soy Gemma, un modelo de lenguaje".into(),
+            asking: true,
+            ..View::default()
+        };
+        ui.platform.teleprompter = crate::teleprompter::View {
+            running: true,
+            segments: vec!["Hola, esto es una prueba de subtítulos en directo.".into()],
+            stable: "Y el asistente".into(),
+            tentative: " responde".into(),
+            ..Default::default()
+        };
+    }),
+    // MicroPrompt: Labs › Assistant while Ollama is closed.
+    ("teleprompter-assistant-off", |ui| {
+        *ui = fixture(DesktopShortcuts::Registered);
+        ui.platform = platform::PlatformState::preview(platform::Capabilities::WINDOWS);
+        ui.host = platform::PlatformHost::Fixture(Vec::new());
+        ui.settings.labs.teleprompter = true;
+        ui.settings.labs.assistant = true;
+        ui.pane = Pane::Teleprompter;
+        ui.platform.teleprompter_assistant.status =
+            crate::teleprompter::assistant::Status::NotRunning;
+    }),
     // MicroPrompt: a multi-page Markdown script, opened to read.
     ("teleprompter-script", |ui| {
         *ui = fixture(DesktopShortcuts::Registered);
