@@ -335,7 +335,7 @@ pub(super) struct PlatformState {
     /// Labs › Assistant's card (`crate::teleprompter::assistant::view`).
     pub(super) teleprompter_assistant: crate::teleprompter::assistant::View,
     /// The Teleprompter pane's script (MicroPrompt).
-    pub(super) teleprompter_script: super::labs::teleprompter_script::ScriptPane,
+    pub(super) teleprompter_script: super::labs::teleprompter::script::ScriptPane,
     /// The Scrawl pane, while the `capture` experiment is on; `None` hides
     /// it.
     #[cfg(hex_capture)]

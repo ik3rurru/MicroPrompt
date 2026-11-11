@@ -4,6 +4,9 @@
 //! the newest line while scrolled to the bottom. One button starts and
 //! stops the session (`crate::teleprompter`), which runs in this process.
 
+mod assistant;
+pub(in crate::rune_ui) mod script;
+
 use rune::{El, Span, TextStyle, col, rich, row, text};
 
 use crate::desktop::i18n::tr;
@@ -26,8 +29,7 @@ pub(in crate::rune_ui) fn shown(ui: &Ui) -> bool {
 /// Copies the session in when it changed (the host's poll, every frame;
 /// the session wakes the window on each change). True when it did.
 pub(in crate::rune_ui) fn poll(state: &mut PlatformState) -> bool {
-    let script =
-        super::teleprompter_script::poll(state) | super::teleprompter_assistant::poll(state);
+    let script = script::poll(state) | assistant::poll(state);
     let generation = crate::teleprompter::generation();
     if generation == state.teleprompter.generation {
         return script;
@@ -38,12 +40,12 @@ pub(in crate::rune_ui) fn poll(state: &mut PlatformState) -> bool {
 
 pub(in crate::rune_ui) fn pane(ui: &Ui, p: Paint) -> (Vec<El>, El) {
     let view = &ui.platform.teleprompter;
-    let body = super::teleprompter_script::view(ui, p).unwrap_or_else(|| body(p, view));
-    let script = super::teleprompter_script::button_for(ui, p);
+    let body = script::view(ui, p).unwrap_or_else(|| body(p, view));
+    let script = script::button_for(ui, p);
     let actions = std::iter::once(script)
         .chain(actions(ui, p, view))
         .collect();
-    let assistant = super::teleprompter_assistant::card_for(ui, p);
+    let assistant = assistant::card_for(ui, p);
     // Windows registers its own shortcut; elsewhere a desktop keybinding runs
     // `hex teleprompter toggle`. Hidden while a session runs: only its text.
     if !cfg!(target_os = "windows") || view.running {

@@ -260,6 +260,26 @@ const PATHS: &[(&str, &str)] = &[
         "Linux & Windows/Teleprompter/Before a session",
     ),
     ("teleprompter-script", "Linux & Windows/Teleprompter/Script"),
+    (
+        "teleprompter-speakers",
+        "Linux & Windows/Teleprompter/Me and others",
+    ),
+    (
+        "teleprompter-interview",
+        "Linux & Windows/Teleprompter/Interview",
+    ),
+    (
+        "teleprompter-interview-stories",
+        "Linux & Windows/Teleprompter/Interview · stories",
+    ),
+    (
+        "teleprompter-assistant",
+        "Linux & Windows/Teleprompter/Assistant",
+    ),
+    (
+        "teleprompter-assistant-off",
+        "Linux & Windows/Teleprompter/Assistant · Ollama closed",
+    ),
     ("windows-labs", "Linux & Windows/Labs · Windows"),
     ("linux-labs", "Linux & Windows/Labs · Linux"),
     ("disabled", "Linux & Windows/Disabled"),
