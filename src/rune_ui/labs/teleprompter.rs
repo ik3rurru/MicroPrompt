@@ -45,6 +45,15 @@ pub(in crate::rune_ui) fn pane(ui: &Ui, p: Paint) -> (Vec<El>, El) {
     let lab = crate::labs::Feature::Assistant;
     let assistant = lab.on_this_os() && lab.on(&ui.settings);
     let body = script::view(ui, p).unwrap_or_else(|| body(p, view, assistant));
+    let body = match assistant.then(|| ask_box(ui, p)) {
+        None => body,
+        Some(ask) => col()
+            .key("teleprompter-thread")
+            .grow(1.0)
+            .shrink()
+            .child(body)
+            .child(ask),
+    };
     let script = script::button_for(ui, p);
     let actions = std::iter::once(script)
         .chain(actions(ui, p, view))
@@ -336,6 +345,13 @@ fn answer(
         .child(text(name).font(p.k.ty.ui).color(p.accent()))
         .child(row().key("space").grow(1.0))
         .children(switch);
+    let typed = answer.question.as_ref().map(|typed| {
+        text(format!("“{}”", typed.trim()))
+            .key("typed")
+            .font(p.k.ty.ui)
+            .color(p.muted())
+            .wrap()
+    });
     let body = if answer.error.is_some() {
         text(message.text.clone())
             .font(ANSWER)
@@ -351,7 +367,45 @@ fn answer(
         .px(18.0)
         .py(14.0)
         .child(header)
+        .children(typed)
         .child(body.key("answer-text"))
+}
+
+/// The box under the thread for writing to the assistant (AS-04): Enter or
+/// Ask sends it; it stays while another answer is still being written.
+fn ask_box(ui: &Ui, p: Paint) -> El {
+    fn send(ui: &mut Ui) {
+        let typed = ui.platform.teleprompter_ask.text.trim().to_owned();
+        if typed.is_empty() {
+            return;
+        }
+        let ask = crate::teleprompter::prompts::Action::Ask;
+        if crate::teleprompter::assistant::ask(ask, Some(typed)) {
+            ui.platform.teleprompter_ask = rune::TextEdit::default();
+        }
+    }
+    let input = rune_kit::TextInput::new(&ui.platform.teleprompter_ask)
+        .placeholder(tr("Ask the AI: an example, shorter, why…"))
+        .width(None)
+        .on_edit(|ui: &mut Ui| &mut ui.platform.teleprompter_ask)
+        .on_submit(|ui: &mut Ui, _: &mut Tx| send(ui))
+        .build(p.k)
+        .key("ask-input")
+        .grow(1.0);
+    row()
+        .key("teleprompter-ask")
+        .px(METRICS.gutter)
+        .py(10.0)
+        .gap(8.0)
+        .center_y()
+        .child(input)
+        .child(button(
+            p,
+            "teleprompter-ask-send",
+            tr("Ask"),
+            ButtonKind::Secondary,
+            |ui: &mut Ui, _: &mut Tx| send(ui),
+        ))
 }
 
 /// A message's switch: the assistant reads the message while on; `flip`

@@ -92,6 +92,17 @@ Feature             Pane  Toggle (settings.json, hex settings)   On: what it doe
 │                                        answers in the thread, and the context unit-tested; an ignored test runs both actions on this
 │                                        computer's Ollama (gemma4:12b warm: first words 0.15-0.27 s, all 1-1.3 s); buttons and
 │                                        shortcuts not pressed in the running app; no golden)
+│                                        AS-04: a box under the thread (Enter or Ask) sends what you type as Ask: it reads the thread,
+│                                        earlier answers, and earlier typed requests ("Me (typed):"), so "give an example" or "shorter"
+│                                        follows up the latest answer; the answer shows the typed text above it.
+│                                        AS-06: Notes (topics, decisions, action items with owner/date only when said, open questions,
+│                                        next steps; from what was said only) and Insights (strengths, gaps, recommendations; how an
+│                                        interview went), buttons on the card, during or after a session. The latest finished ones go
+│                                        onto the session's History entry (`notes`, Markdown) at its stop, or when they finish after
+│                                        it; History shows them and Save notes as .md writes them beside the .txt/.srt. Prompts, the
+│                                        typed context, and the notes document are unit-tested; an ignored test runs Ask, Notes, and
+│                                        Insights on this computer's Ollama (gemma4:12b warm: notes in about 1 s); not pressed in
+│                                        the running app.
 ├── Live chapters   no    labs.live_chapters           (macOS)   chapters a meeting while it records, boundary pass after Stop
 ├── Vocabulary biasing no labs.vocabulary_biasing                Parakeet transcription biased toward the vocabulary (#452/#457)
 ├── Switch model with keyboard language  no  keyboard_model_switching.enabled  (macOS, Windows, X11)

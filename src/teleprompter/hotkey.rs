@@ -76,8 +76,12 @@ fn press(key: TeleprompterKey) {
     use super::prompts::Action;
     match key {
         TeleprompterKey::Toggle => super::toggle(),
-        TeleprompterKey::Suggest => super::assistant::ask(Action::Suggest),
-        TeleprompterKey::Answer => super::assistant::ask(Action::Answer),
+        TeleprompterKey::Suggest => {
+            super::assistant::ask(Action::Suggest, None);
+        }
+        TeleprompterKey::Answer => {
+            super::assistant::ask(Action::Answer, None);
+        }
     }
 }
 

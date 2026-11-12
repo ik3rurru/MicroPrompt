@@ -191,6 +191,7 @@ impl HistoryPane {
                     text_ms: None,
                     versions: Vec::new(),
                     segments: Vec::new(),
+                    notes: None,
                 }
             };
         let mut rewritten = entry(
@@ -787,8 +788,13 @@ fn detail(ui: &Ui, p: Paint, layer: &mut Vec<El>) -> El {
                 ),
         );
     }
+    // MicroPrompt: the session's notes and insights (AS-06).
+    if let Some(notes) = &entry.notes {
+        let style = rune_kit::MarkdownStyle::from_kit(p.k);
+        body = body.child(rune_kit::Markdown::new(notes).render(&style).key("notes"));
+    }
     if entry.kind == HistoryKind::Teleprompter {
-        body = body.child(export_section(ui, p, id));
+        body = body.child(export_section(ui, p, id, entry.notes.is_some()));
     }
     body = body.child(ld::facts(p, facts));
     if ui.settings.labs.keep_recordings && entry.has_recording() {
@@ -818,15 +824,17 @@ fn detail(ui: &Ui, p: Paint, layer: &mut Vec<El>) -> El {
         .child(ld::card_scroll(p, "detail-scroll", body))
 }
 
-/// A Teleprompter session's Save as .txt and .srt, and where the last went.
-fn export_section(ui: &Ui, p: Paint, id: u64) -> El {
-    let save = |subtitles: bool| {
+/// A Teleprompter session's Save as .txt and .srt (and its notes as .md),
+/// and where the last went.
+fn export_section(ui: &Ui, p: Paint, id: u64, has_notes: bool) -> El {
+    use crate::teleprompter::Export;
+    let save = |export: Export| {
         move |ui: &mut Ui, _: &mut Tx| {
             let Some(entry) = ui.history.entry(id).cloned() else {
                 return;
             };
-            let saved = crate::teleprompter::export(&entry, subtitles)
-                .map(|path| path.display().to_string());
+            let saved =
+                crate::teleprompter::export(&entry, export).map(|path| path.display().to_string());
             ui.history.exported = Some((id, saved));
         }
     };
@@ -851,14 +859,22 @@ fn export_section(ui: &Ui, p: Paint, id: u64) -> El {
                     p,
                     "export-txt",
                     tr("Save as .txt"),
-                    save(false),
+                    save(Export::Text),
                 ))
                 .child(small_button(
                     p,
                     "export-srt",
                     tr("Save as .srt"),
-                    save(true),
-                )),
+                    save(Export::Subtitles),
+                ))
+                .children(has_notes.then(|| {
+                    small_button(
+                        p,
+                        "export-notes",
+                        tr("Save notes as .md"),
+                        save(Export::Notes),
+                    )
+                })),
         )
         .children(note.map(|(copy, color)| {
             text(copy)

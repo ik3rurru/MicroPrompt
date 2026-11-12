@@ -336,6 +336,8 @@ pub(super) struct PlatformState {
     pub(super) teleprompter_assistant: crate::teleprompter::assistant::View,
     /// The Teleprompter pane's script (MicroPrompt).
     pub(super) teleprompter_script: super::labs::teleprompter::script::ScriptPane,
+    /// What the user is typing to the assistant (AS-04).
+    pub(super) teleprompter_ask: rune::TextEdit,
     /// The Scrawl pane, while the `capture` experiment is on; `None` hides
     /// it.
     #[cfg(hex_capture)]
@@ -401,6 +403,7 @@ impl PlatformState {
             teleprompter: Default::default(),
             teleprompter_assistant: Default::default(),
             teleprompter_script: Default::default(),
+            teleprompter_ask: Default::default(),
             #[cfg(hex_capture)]
             scrawl: None,
         }

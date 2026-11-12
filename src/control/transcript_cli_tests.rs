@@ -129,6 +129,7 @@ fn history_stats_parse_sum_retained_entries_and_need_the_labs_toggle() {
         text_ms: None,
         versions: Vec::new(),
         segments: Vec::new(),
+        notes: None,
     };
     let entries = [
         entry(1, 10, "expired by retention", "expired by retention"),

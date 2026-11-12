@@ -121,6 +121,8 @@ pub(crate) struct Answer {
     pub(crate) error: Option<String>,
     /// Whether the assistant reads it again (Answer reads earlier answers).
     pub(crate) used: bool,
+    /// What the user typed, for [`prompts::Action::Ask`] (AS-04).
+    pub(crate) question: Option<String>,
 }
 
 /// What a session has shown so far, as `status` reports it.
@@ -142,6 +144,9 @@ struct Live {
     /// The first segment of the interviewer's turn that last got a hint:
     /// one per turn.
     hinted_turn: Option<usize>,
+    /// The History entry the stopped session was kept as, where its notes
+    /// go (AS-06).
+    kept: Option<u64>,
 }
 
 impl Live {
@@ -168,6 +173,7 @@ impl Live {
             hints: false,
             others_only: false,
             hinted_turn: None,
+            kept: None,
         }
     }
 
@@ -434,7 +440,7 @@ fn stop() -> ControlReply {
         live.view.running = false;
         live.view.stopping = false;
     });
-    let live = lock(&LIVE);
+    let mut live = lock(&LIVE);
     let elapsed = session.started.elapsed().as_secs();
     tracing::info!(seconds = elapsed, latency = %live.latency(), "teleprompter stopped");
     match end {
@@ -443,11 +449,16 @@ fn stop() -> ControlReply {
             segments,
             duration_ms,
         }) => {
-            let saved = keep(&text, &segments, &live.turns, duration_ms, session.model);
-            ControlReply::done(format!(
+            let (saved, kept) = keep(&text, &segments, &live.turns, duration_ms, session.model);
+            live.kept = kept;
+            let reply = format!(
                 "Teleprompter stopped after {elapsed} s{saved}; {}\n{text}",
                 live.latency()
-            ))
+            );
+            drop(live);
+            // Notes and Insights made during the session.
+            assistant::keep_notes();
+            ControlReply::done(reply)
         }
         Some(End::Failed { message, .. }) => {
             ControlReply::error("failed", format!("the last window failed: {message}"))
@@ -619,16 +630,16 @@ fn asked_in(live: &mut Live) -> Option<String> {
 }
 
 /// Keeps a finished session in History, each line under its speaker's name
-/// when it has `turns`; what the reply adds about it.
+/// when it has `turns`; what the reply adds about it, and the entry.
 fn keep(
     text: &str,
     segments: &[crate::transcription::stream::Segment],
     turns: &[(u64, Speaker)],
     duration_ms: u64,
     model: String,
-) -> &'static str {
+) -> (&'static str, Option<u64>) {
     if text.trim().is_empty() {
-        return "";
+        return ("", None);
     }
     let segments = segments
         .iter()
@@ -660,13 +671,29 @@ fn keep(
         model: Some(model),
     };
     match history().map(|history| history.record_with(draft, segments)) {
-        Some(Ok(Some(_))) => ", kept in History",
-        Some(Ok(None)) => ", not kept: History is off",
+        Some(Ok(Some(id))) => (", kept in History", Some(id)),
+        Some(Ok(None)) => (", not kept: History is off", None),
         Some(Err(error)) => {
             tracing::warn!(%error, "could not keep the teleprompter session");
-            ", not kept in History"
+            (", not kept in History", None)
         }
-        None => ", not kept in History",
+        None => (", not kept in History", None),
+    }
+}
+
+/// Puts `notes` on the stopped session's History entry, if it was kept;
+/// whether it was.
+fn keep_notes_on_entry(notes: String) -> bool {
+    let Some(id) = lock(&LIVE).kept else {
+        return false;
+    };
+    match history().map(|history| history.set_notes(id, notes)) {
+        Some(Ok(kept)) => kept,
+        Some(Err(error)) => {
+            tracing::warn!(%error, "could not keep the session's notes");
+            false
+        }
+        None => false,
     }
 }
 
@@ -703,10 +730,19 @@ pub(crate) fn srt(segments: &[HistorySegment]) -> String {
     out
 }
 
-/// Writes a kept session as `.srt` (`subtitles`) or `.txt` into
+/// What a kept session saves as.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Export {
+    Text,
+    Subtitles,
+    /// Its notes and insights, Markdown (AS-06).
+    Notes,
+}
+
+/// Writes a kept session as `.txt`, `.srt`, or its notes as `.md` into
 /// Documents/MicroPrompt, named for when it was kept, and shows it in the
 /// file manager.
-pub(crate) fn export(entry: &HistoryEntry, subtitles: bool) -> Result<std::path::PathBuf, String> {
+pub(crate) fn export(entry: &HistoryEntry, export: Export) -> Result<std::path::PathBuf, String> {
     let folder = crate::app_paths::document_dir()
         .ok_or("there is no Documents folder")?
         .join("MicroPrompt");
@@ -717,12 +753,20 @@ pub(crate) fn export(entry: &HistoryEntry, subtitles: bool) -> Result<std::path:
         .unwrap_or(&when)
         .replace('T', " ")
         .replace(':', "-");
-    let (extension, body) = if subtitles {
-        ("srt", srt(&entry.segments))
-    } else {
-        ("txt", format!("{}\n", entry.final_text.trim()))
+    let (name, extension, body) = match export {
+        Export::Subtitles => ("Teleprompter", "srt", srt(&entry.segments)),
+        Export::Text => (
+            "Teleprompter",
+            "txt",
+            format!("{}\n", entry.final_text.trim()),
+        ),
+        Export::Notes => (
+            "Notes",
+            "md",
+            format!("{}\n", entry.notes.as_deref().unwrap_or_default().trim()),
+        ),
     };
-    let path = folder.join(format!("Teleprompter {when}.{extension}"));
+    let path = folder.join(format!("{name} {when}.{extension}"));
     std::fs::write(&path, body).map_err(|error| error.to_string())?;
     crate::meeting::reveal(&path);
     Ok(path)

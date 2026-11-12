@@ -84,8 +84,8 @@ pub(in crate::rune_ui) fn card_for(ui: &Ui, p: Paint) -> Option<El> {
     )
 }
 
-/// Suggest and Answer; the one answering says so, and neither starts
-/// another until it is done.
+/// Suggest, Answer, Notes, and Insights; the one answering says so, and
+/// none starts another until it is done.
 fn actions(ui: &Ui, p: Paint) -> El {
     let answering = ui
         .platform
@@ -111,7 +111,9 @@ fn actions(ui: &Ui, p: Paint) -> El {
             &format!("assistant-{}", action.label().to_lowercase()),
             label,
             ButtonKind::Secondary,
-            move |_, _| assistant::ask(action),
+            move |_, _| {
+                assistant::ask(action, None);
+            },
         ));
     }
     row

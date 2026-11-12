@@ -150,7 +150,18 @@ pub(crate) fn for_ai(view: &View, budget: usize, answers: bool) -> String {
     };
     for message in messages(view).iter().rev().filter(read) {
         let line = match message.answer {
-            Some(_) => format!("AI: {}", message.text.trim()),
+            Some(index) => {
+                let answer = format!("AI: {}", message.text.trim());
+                // What the user typed comes before its answer (AS-04).
+                match &view.answers[index].question {
+                    Some(typed) => format!(
+                        "{} (typed): {}\n{answer}",
+                        crate::desktop::i18n::tr("Me"),
+                        typed.trim()
+                    ),
+                    None => answer,
+                }
+            }
             None => super::labelled(message.speaker, message.text.trim()),
         };
         used += line.len() + 1;
@@ -255,6 +266,7 @@ mod tests {
             done,
             error: None,
             used: true,
+            question: None,
         };
         view.answers = vec![answer(1, "Una estructura que acelera búsquedas.", true)];
         let all = messages(&view);
@@ -277,6 +289,13 @@ AI: Una estructura que acelera búsquedas.
             )
         );
         assert!(!for_ai(&view, BUDGET_CHARS, false).contains("AI:"));
+        // A typed question comes before its answer (AS-04).
+        view.answers[0].question = Some("¿Qué es?".into());
+        let me = crate::desktop::i18n::tr("Me");
+        assert!(
+            for_ai(&view, BUDGET_CHARS, true)
+                .contains(&format!("{me} (typed): ¿Qué es?\nAI: Una estructura"))
+        );
         view.answers.push(answer(2, "Escribiendo", false));
         assert!(!for_ai(&view, BUDGET_CHARS, true).contains("Escribiendo"));
         assert_eq!(messages(&view).last().unwrap().answer, Some(1));

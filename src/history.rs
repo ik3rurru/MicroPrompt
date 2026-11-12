@@ -146,6 +146,10 @@ pub struct HistoryEntry {
     /// A Teleprompter session's timed lines, for its subtitles.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub segments: Vec<HistorySegment>,
+    /// MicroPrompt: a Teleprompter session's notes and insights from the
+    /// local model, Markdown (AS-06).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notes: Option<String>,
 }
 
 /// One timed line of a Teleprompter session, from the session's start.
@@ -174,6 +178,7 @@ impl HistoryEntry {
                 .iter()
                 .map(|segment| segment.text.len())
                 .sum::<usize>()
+            + self.notes.as_ref().map_or(0, String::len)
             + self
                 .versions
                 .iter()
@@ -466,6 +471,7 @@ impl HistoryStore {
             text_ms: None,
             versions: Vec::new(),
             segments,
+            notes: None,
         });
         self.prune(now_ms);
         self.persist()?;
@@ -505,6 +511,15 @@ impl HistoryStore {
     /// there was one.
     pub fn restore_version(&mut self, id: u64, index: usize) -> io::Result<bool> {
         self.change(id, |entry| entry.restore(index))
+    }
+
+    /// Sets a Teleprompter session's `notes`, replacing earlier ones.
+    /// Returns whether the entry existed.
+    pub fn set_notes(&mut self, id: u64, notes: String) -> io::Result<bool> {
+        self.change(id, |entry| {
+            entry.notes = Some(truncated(&notes, MAX_TEXT_BYTES));
+            true
+        })
     }
 
     /// Changes entry `id` and saves; a failed save keeps it as it was.
@@ -789,6 +804,10 @@ impl History {
 
     pub fn restore_version(&self, id: u64, index: usize) -> io::Result<bool> {
         self.synced().restore_version(id, index)
+    }
+
+    pub fn set_notes(&self, id: u64, notes: String) -> io::Result<bool> {
+        self.synced().set_notes(id, notes)
     }
 
     pub fn recording_path(&self, id: u64) -> Option<PathBuf> {

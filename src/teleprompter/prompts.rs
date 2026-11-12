@@ -17,10 +17,21 @@ pub(crate) enum Action {
     /// Three key points for the interviewer's question, on its own when
     /// the question ends (EN-03, [`super::hints`]).
     Hint,
+    /// What the user typed to the assistant (AS-04): a clarification, an
+    /// example, "shorter". Reads earlier answers and typed questions, so it
+    /// can follow up on them.
+    Ask,
+    /// The session's notes in five fixed sections (AS-06), from what was
+    /// said only.
+    Notes,
+    /// Strengths, gaps, and recommendations; after an interview, how it
+    /// went (AS-06).
+    Insights,
 }
 
 impl Action {
-    pub(crate) const ALL: [Self; 2] = [Self::Suggest, Self::Answer];
+    /// The card's buttons.
+    pub(crate) const ALL: [Self; 4] = [Self::Suggest, Self::Answer, Self::Notes, Self::Insights];
 
     /// Its button and its answer's name in the thread.
     pub(crate) fn label(self) -> &'static str {
@@ -28,12 +39,15 @@ impl Action {
             Self::Suggest => "Suggest",
             Self::Answer => "Answer",
             Self::Hint => "Hint",
+            Self::Ask => "Ask",
+            Self::Notes => "Notes",
+            Self::Insights => "Insights",
         }
     }
 
     /// Whether it reads the assistant's earlier answers too.
     pub(crate) fn reads_answers(self) -> bool {
-        self == Self::Answer
+        matches!(self, Self::Answer | Self::Ask)
     }
 }
 
@@ -96,10 +110,46 @@ sentences. Nothing else: no title, no introduction, no closing. Use the facts in
 the documents (numbers, projects, names); if a point is not in them, end it with \
 \"({suggestion})\".";
 
+const ASK: &str = "\
+The user typed the request under \"Request\", at the end, to you; it was not \
+said in the conversation. Do what it asks, using the conversation, the \
+documents, and your earlier answers (the \"AI:\" lines, each after the typed \
+request it answered, marked \"{me} (typed):\"). A short follow-up such as \
+\"give an example\", \"shorter\", or \"why?\" is about your latest answer and \
+the question it answered. Answer directly, no preamble, as briefly as the \
+request allows.";
+
+const NOTES: &str = "\
+Write the notes of this conversation from what was actually said in it, \
+nothing else: no facts from the documents or general knowledge, no guessed \
+owners or dates. Use exactly these five sections, in this order, each a bold \
+label on its own line followed by short bullets:
+
+**{topics}:** what was discussed.
+**{decisions}:** what was agreed or decided.
+**{tasks}:** who does what, with the owner and the date only when they were said.
+**{questions}:** what was left unanswered or unclear.
+**{next}:** what happens next.
+
+A section with nothing said in the conversation gets one bullet: \"{none}\". \
+Call the user \"{you}\". No preamble, no closing.";
+
+const INSIGHTS: &str = "\
+Look back at this conversation and give the user insights on it, in exactly \
+these sections, each a bold label on its own line followed by short bullets:
+
+**{strengths}:** what the user did or said well.
+**{gaps}:** what was missing, weak, or left unanswered on the user's side.
+**{recommendations}:** concrete things to do next time or as follow-up.
+
+If it was a job interview, add a last section **{interview}:** 2 or 3 \
+sentences on how it went for the user and what the interviewer seemed to care \
+about. Base every point on what was said; no preamble, no closing.";
+
 /// The chat messages for `action`: how to answer, then what to answer from.
 /// `conversation` is [`super::conversation::for_ai`]'s text; `documents`
 /// are (name, text) pairs such as the script and the CV; `question`, the
-/// one a hint answers.
+/// one a hint answers or the request the user typed.
 pub(crate) fn messages(
     action: Action,
     language: &str,
@@ -120,11 +170,38 @@ pub(crate) fn messages(
                 "Ideas clave",
                 "Posibles repreguntas",
                 "sugerencia",
+                "Temas",
+                "Decisiones",
+                "Tareas",
+                "Dudas abiertas",
+                "Siguientes pasos",
+                "Nada",
+                "Puntos fuertes",
+                "Carencias",
+                "Recomendaciones",
+                "Cómo te fue",
+                "tú",
             ],
         ),
         _ => (
             "English",
-            ["Say this", "Key points", "Likely follow-ups", "suggestion"],
+            [
+                "Say this",
+                "Key points",
+                "Likely follow-ups",
+                "suggestion",
+                "Topics",
+                "Decisions",
+                "Action items",
+                "Open questions",
+                "Next steps",
+                "None",
+                "Strengths",
+                "Gaps",
+                "Recommendations",
+                "How it went",
+                "you",
+            ],
         ),
     };
     let task = match action {
@@ -134,6 +211,20 @@ pub(crate) fn messages(
             .replace("{follow}", labels[2]),
         Action::Answer => ANSWER.to_owned(),
         Action::Hint => HINT.replace("{suggestion}", labels[3]),
+        Action::Ask => ASK.replace("{me}", tr("Me")),
+        Action::Notes => NOTES
+            .replace("{topics}", labels[4])
+            .replace("{decisions}", labels[5])
+            .replace("{tasks}", labels[6])
+            .replace("{questions}", labels[7])
+            .replace("{next}", labels[8])
+            .replace("{none}", labels[9])
+            .replace("{you}", labels[14]),
+        Action::Insights => INSIGHTS
+            .replace("{strengths}", labels[10])
+            .replace("{gaps}", labels[11])
+            .replace("{recommendations}", labels[12])
+            .replace("{interview}", labels[13]),
     };
     let system = format!(
         "{role}\n\n{task}\n\nWrite your whole answer in {language}, the bold labels translated too."
@@ -153,7 +244,12 @@ pub(crate) fn messages(
     };
     user.push_str(&format!("=== Conversation ===\n{conversation}"));
     if let Some(question) = question {
-        user.push_str(&format!("\n\n=== Question ===\n{}", question.trim()));
+        let heading = if action == Action::Ask {
+            "Request"
+        } else {
+            "Question"
+        };
+        user.push_str(&format!("\n\n=== {heading} ===\n{}", question.trim()));
     }
     vec![
         json!({ "role": "system", "content": system }),
@@ -199,5 +295,28 @@ mod tests {
                 .unwrap()
                 .contains("nothing has been said")
         );
+    }
+
+    #[test]
+    fn a_typed_request_and_the_notes_five_sections() {
+        let ask = messages(Action::Ask, "es", "", Some(" dame un ejemplo "), &[]);
+        assert!(
+            ask[1]["content"]
+                .as_str()
+                .unwrap()
+                .ends_with("=== Request ===\ndame un ejemplo")
+        );
+        let notes = messages(Action::Notes, "es", "", None, &[]);
+        let system = notes[0]["content"].as_str().unwrap();
+        for label in [
+            "**Temas:**",
+            "**Decisiones:**",
+            "**Tareas:**",
+            "**Dudas abiertas:**",
+            "**Siguientes pasos:**",
+        ] {
+            assert!(system.contains(label), "{label}");
+        }
+        assert!(!system.contains('{'));
     }
 }

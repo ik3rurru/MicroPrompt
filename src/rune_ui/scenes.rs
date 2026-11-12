@@ -102,6 +102,10 @@ pub(super) const SCENES: &[Scene] = &[
         session.model = Some("Nemotron 3.5 ASR".into());
         session.final_text = "Hola, esto es una prueba de subtítulos en directo. MicroPrompt escribe lo que digo mientras hablo.".into();
         session.raw_text = session.final_text.clone();
+        session.notes = Some(
+            "## Notes\n\n**Temas:**\n- Fecha de lanzamiento\n\n**Decisiones:**\n- Lanzar el 15 de diciembre\n\n**Tareas:**\n- Presupuesto de marketing: Ana (viernes)\n\n## Insights\n\n**Puntos fuertes:**\n- Propusiste una fecha concreta"
+                .into(),
+        );
         ui.history.entries.insert(0, session);
         ui.history.selected = Some(4);
         ui.history.exported = Some((
@@ -804,6 +808,7 @@ pub(super) const SCENES: &[Scene] = &[
             done,
             error: None,
             used: true,
+            question: None,
         };
         ui.platform.teleprompter = crate::teleprompter::View {
             running: true,
@@ -834,8 +839,17 @@ pub(super) const SCENES: &[Scene] = &[
                     Action::Answer,
                     2,
                     "**Understood:** qué aprendiste de esa migración",
-                    false,
+                    true,
                 ),
+                crate::teleprompter::Answer {
+                    question: Some("dame un ejemplo más corto".into()),
+                    ..answer(
+                        Action::Ask,
+                        2,
+                        "Aprendí a medir antes de cambiar: los errores bajaron un 80 %.",
+                        false,
+                    )
+                },
             ],
             ..Default::default()
         };
@@ -893,6 +907,7 @@ pub(super) const SCENES: &[Scene] = &[
                 done: true,
                 error: None,
                 used: true,
+                question: None,
             }],
             speaker: Some(Others),
             stable: "¿Y por qué quieres".into(),

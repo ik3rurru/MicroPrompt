@@ -181,6 +181,7 @@ mod tests {
             text_ms: None,
             versions: Vec::new(),
             segments: Vec::new(),
+            notes: None,
         }
     }
 

@@ -291,13 +291,15 @@ pub(crate) fn warm() {
 }
 
 /// Runs `action` on what the thread lets the assistant read, its answer
-/// streaming into the thread after what has been heard. One at a time: a
-/// press while one answers does nothing.
-pub(crate) fn ask(action: Action) {
-    let Some(index) = begin(action, true) else {
-        return;
+/// streaming into the thread after what has been heard; `question` is what
+/// the user typed for [`Action::Ask`]. One at a time: a press while one
+/// answers does nothing and returns false.
+pub(crate) fn ask(action: Action, question: Option<String>) -> bool {
+    let Some(index) = begin(action, true, question.clone()) else {
+        return false;
     };
-    std::thread::spawn(move || stream(index, action, None));
+    std::thread::spawn(move || stream(index, action, question));
+    true
 }
 
 /// The interview's hint for `question` (EN-03): the script's own points at
@@ -314,7 +316,7 @@ pub(crate) fn hint(question: &str) {
     if let Some(entry) = super::hints::matching(question, &prepared) {
         tracing::info!(entry = entry.name, "interview hint from the script");
         let text = super::hints::from_script(question, entry);
-        if let Some(index) = begin(Action::Hint, false) {
+        if let Some(index) = begin(Action::Hint, false, None) {
             super::update(|live| {
                 if let Some(answer) = live.view.answers.get_mut(index) {
                     answer.text = text;
@@ -328,7 +330,7 @@ pub(crate) fn hint(question: &str) {
     if !crate::labs::Feature::Assistant.on(&settings) {
         return;
     }
-    if let Some(index) = begin(Action::Hint, false) {
+    if let Some(index) = begin(Action::Hint, false, None) {
         let question = question.to_owned();
         std::thread::spawn(move || stream(index, Action::Hint, Some(question)));
     }
@@ -341,8 +343,8 @@ fn documents() -> Vec<(String, String)> {
         .clone()
 }
 
-/// Answers `action` (for a hint, its `question`) into the thread's answer
-/// `index`, piece by piece.
+/// Answers `action` (for a hint, its `question`; for Ask, what was typed)
+/// into the thread's answer `index`, piece by piece.
 fn stream(index: usize, action: Action, question: Option<String>) {
     {
         let started = std::time::Instant::now();
@@ -386,6 +388,7 @@ fn stream(index: usize, action: Action, question: Option<String>) {
         {
             update(|view| view.status = Status::NotRunning);
         }
+        let ok = result.is_ok();
         super::update(|live| {
             if let Some(answer) = live.view.answers.get_mut(index) {
                 answer.done = true;
@@ -398,13 +401,48 @@ fn stream(index: usize, action: Action, question: Option<String>) {
                 });
             }
         });
+        // Asked once the session stopped: onto its History entry now.
+        if ok && matches!(action, Action::Notes | Action::Insights) {
+            keep_notes();
+        }
+    }
+}
+
+/// The latest finished Notes and Insights of `view`, as one Markdown
+/// document, Notes first.
+fn notes(view: &super::View) -> Option<String> {
+    use crate::desktop::i18n::tr;
+    let parts: Vec<String> = [Action::Notes, Action::Insights]
+        .into_iter()
+        .filter_map(|action| {
+            let answer = view.answers.iter().rfind(|it| {
+                it.action == action && it.done && it.error.is_none() && !it.text.trim().is_empty()
+            })?;
+            Some(format!(
+                "## {}\n\n{}",
+                tr(action.label()),
+                answer.text.trim()
+            ))
+        })
+        .collect();
+    (!parts.is_empty()).then(|| parts.join("\n\n"))
+}
+
+/// Puts the session's Notes and Insights on its History entry once the
+/// session is kept (AS-06): at its stop, and whenever one finishes after.
+/// While it runs there is no entry yet, so this does nothing.
+pub(crate) fn keep_notes() {
+    if let Some(notes) = notes(&super::view())
+        && super::keep_notes_on_entry(notes)
+    {
+        tracing::info!("session notes kept in History");
     }
 }
 
 /// Adds `action`'s answer to the thread; its index. An `exclusive` one (the
 /// buttons') is refused while another of them still answers; hints never
 /// wait.
-fn begin(action: Action, exclusive: bool) -> Option<usize> {
+fn begin(action: Action, exclusive: bool, question: Option<String>) -> Option<usize> {
     let mut index = None;
     super::update(|live| {
         let view = &mut live.view;
@@ -425,6 +463,7 @@ fn begin(action: Action, exclusive: bool) -> Option<usize> {
             done: false,
             error: None,
             used: true,
+            question,
         });
         index = Some(view.answers.len() - 1);
     });
@@ -483,6 +522,37 @@ mod tests {
         assert_eq!(view.model(Some("qwen3.5:9b")).unwrap().name, "qwen3.5:9b");
         assert_eq!(view.model(Some("gone")).unwrap().name, "qwen3.5:9b");
         assert!(View::default().model(None).is_none());
+    }
+
+    #[test]
+    fn the_latest_notes_and_insights_make_one_document() {
+        let answer = |action, text: &str, done| crate::teleprompter::Answer {
+            action,
+            after: 0,
+            text: text.into(),
+            done,
+            error: None,
+            used: true,
+            question: None,
+        };
+        let mut view = crate::teleprompter::View::default();
+        assert_eq!(notes(&view), None);
+        view.answers = vec![
+            answer(Action::Notes, "old", true),
+            answer(Action::Suggest, "say this", true),
+            answer(Action::Insights, "strong", true),
+            answer(Action::Notes, " new ", true),
+            answer(Action::Notes, "still writing", false),
+        ];
+        let tr = crate::desktop::i18n::tr;
+        assert_eq!(
+            notes(&view).unwrap(),
+            format!(
+                "## {}\n\nnew\n\n## {}\n\nstrong",
+                tr("Notes"),
+                tr("Insights")
+            )
+        );
     }
 
     /// A stand-in Ollama on a free port answers one request with `reply`.
@@ -611,6 +681,58 @@ Others: Y luego, ¿cómo invertirías una lista enlazada?";
                 "=== {} on {}: first after {first:?}, all after {:?}
 {answer}
 ",
+                action.label(),
+                model.name,
+                started.elapsed()
+            );
+        }
+    }
+
+    /// A typed follow-up after an Answer, then a meeting's Notes and
+    /// Insights, on this computer's Ollama.
+    /// `cargo test -- --ignored ask_and_notes --nocapture`
+    #[test]
+    #[ignore = "needs Ollama running with a local model"]
+    fn ask_and_notes_on_this_computers_ollama() {
+        let view = View {
+            models: models().unwrap(),
+            ..View::default()
+        };
+        let model = view.model(None).expect("a local model").clone();
+        let (me, others) = (
+            crate::desktop::i18n::tr("Me"),
+            crate::desktop::i18n::tr("Others"),
+        );
+        let interview = format!(
+            "{others}: ¿Qué diferencia hay entre un proceso y un hilo?
+AI: **Entendido:** proceso frente a hilo.
+**Respuesta:** un proceso tiene su propia memoria; los hilos de un proceso la comparten.
+{me} (typed): dame un ejemplo"
+        );
+        let meeting = format!(
+            "{others}: Bueno, empezamos. Hoy toca decidir la fecha de lanzamiento de la app y repartir el trabajo.
+{me}: Yo propongo lanzar el 15 de diciembre, así tenemos dos semanas de pruebas.
+{others}: Me parece bien el 15. Ana, ¿puedes preparar el presupuesto de marketing?
+{others}: Sí, lo tengo para el viernes.
+{me}: Perfecto. Yo me encargo de cerrar los errores del pago con tarjeta.
+{others}: Queda pendiente saber si incluimos la versión en inglés; eso lo vemos con el cliente.
+{me}: Vale, y la próxima reunión el lunes a las diez para revisar las pruebas."
+        );
+        for (action, conversation, question) in [
+            (Action::Ask, interview.as_str(), Some("dame un ejemplo")),
+            (Action::Notes, meeting.as_str(), None),
+            (Action::Insights, meeting.as_str(), None),
+        ] {
+            let messages =
+                crate::teleprompter::prompts::messages(action, "es", conversation, question, &[]);
+            let started = std::time::Instant::now();
+            let mut first = None;
+            let answer = chat(&model, messages, |_| {
+                first.get_or_insert(started.elapsed());
+            })
+            .unwrap();
+            eprintln!(
+                "=== {} on {}: first after {first:?}, all after {:?}\n{answer}\n",
                 action.label(),
                 model.name,
                 started.elapsed()
