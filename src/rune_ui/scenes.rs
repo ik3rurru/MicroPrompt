@@ -114,6 +114,13 @@ pub(super) const SCENES: &[Scene] = &[
         ));
         ui.pane = Pane::History;
     }),
+    // MicroPrompt: nothing selected: a narrow pane shows the list alone.
+    ("history-unselected", |ui| {
+        *ui = portal_fixture();
+        ui.history = history::HistoryPane::fixture();
+        ui.history.selected = None;
+        ui.pane = Pane::History;
+    }),
     ("history-empty", |ui| {
         *ui = portal_fixture();
         ui.history = history::HistoryPane::fixture_empty();
@@ -950,6 +957,36 @@ pub(super) const SCENES: &[Scene] = &[
                 thinks: true,
             }],
             ..Default::default()
+        };
+    }),
+    // MicroPrompt: more installed models than fit side by side: the model
+    // is a select, open in the card.
+    ("teleprompter-assistant-models", |ui| {
+        use crate::teleprompter::assistant::{Model, Status, View};
+        *ui = fixture(DesktopShortcuts::Registered);
+        ui.platform = platform::PlatformState::preview(platform::Capabilities::WINDOWS);
+        ui.host = platform::PlatformHost::Fixture(Vec::new());
+        ui.settings.labs.teleprompter = true;
+        ui.settings.labs.assistant = true;
+        ui.settings.labs.assistant_model = Some("gemma4:12b".into());
+        ui.pane = Pane::Teleprompter;
+        ui.open = Some(Menu::Pick("assistant-model"));
+        ui.platform.teleprompter_assistant = View {
+            status: Status::Running,
+            models: [
+                "qwen3.5:9b",
+                "gemma4:12b",
+                "qwen3.5:4b",
+                "llama4:8b",
+                "mistral-small3.2:24b",
+            ]
+            .into_iter()
+            .map(|name| Model {
+                name: name.into(),
+                thinks: true,
+            })
+            .collect(),
+            ..View::default()
         };
     }),
     // MicroPrompt: a multi-page Markdown script, opened to read.

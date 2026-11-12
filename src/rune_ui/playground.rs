@@ -195,6 +195,7 @@ const PATHS: &[(&str, &str)] = &[
         "history-teleprompter",
         "Window/History/Teleprompter session",
     ),
+    ("history-unselected", "Window/History/Nothing selected"),
     #[cfg(hex_capture)]
     ("mac-scrawl", "Window/Annotate/On"),
     #[cfg(hex_capture)]
@@ -279,6 +280,10 @@ const PATHS: &[(&str, &str)] = &[
     (
         "teleprompter-assistant-idle",
         "Linux & Windows/Teleprompter/Assistant · before a session",
+    ),
+    (
+        "teleprompter-assistant-models",
+        "Linux & Windows/Teleprompter/Assistant · many models",
     ),
     ("teleprompter-thread", "Linux & Windows/Teleprompter/Thread"),
     (

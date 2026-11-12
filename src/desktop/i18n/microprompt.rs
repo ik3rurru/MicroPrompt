@@ -28,6 +28,7 @@ pub(super) const TRANSLATIONS: &[(&str, [&str; 6])] = &[
     ("Answer", ["Odpowiedz", "回答", "回答", "Antworten", "Responder", "Відповісти"]),
     ("Notes", ["Notatki", "笔记", "メモ", "Notizen", "Notas", "Нотатки"]),
     ("Insights", ["Wnioski", "洞察", "気づき", "Erkenntnisse", "Ideas", "Висновки"]),
+    ("Sections", ["Sekcje", "章节", "セクション", "Abschnitte", "Secciones", "Розділи"]),
     ("Save notes as .md", ["Zapisz notatki jako .md", "将笔记另存为 .md", "メモを .md で保存", "Notizen als .md speichern", "Guardar notas como .md", "Зберегти нотатки як .md"]),
     ("Ask the AI: an example, shorter, why…", ["Zapytaj AI: przykład, krócej, dlaczego…", "问 AI：举个例子、简短些、为什么…", "AI に質問：例、もっと短く、なぜ…", "Frag die KI: ein Beispiel, kürzer, warum…", "Pregunta a la IA: un ejemplo, más corto, por qué…", "Запитай ШІ: приклад, коротше, чому…"]),
     ("What to say now, from the conversation", ["Co powiedzieć teraz, na podstawie rozmowy", "根据对话，现在该说什么", "会話から、今言うべきこと", "Was du jetzt sagen kannst, aus dem Gespräch", "Qué decir ahora, según la conversación", "Що сказати зараз, з розмови"]),

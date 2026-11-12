@@ -205,7 +205,8 @@ fn body(p: Paint, view: &View, assistant: bool) -> El {
     let mut lines = col()
         .key("teleprompter-lines")
         .gap(14.0)
-        .px(METRICS.gutter)
+        .pl(METRICS.gutter)
+        .pr(METRICS.gutter - list_detail::SCROLL_BAR)
         .pb(16.0);
     // A message names its speaker when the turn changes; with the
     // assistant on, each has a switch that leaves it out of what it reads.
@@ -266,10 +267,12 @@ fn body(p: Paint, view: &View, assistant: bool) -> El {
         .grow(1.0)
         .shrink()
         .children(error)
+        // The scroll's own right padding (its bar's room) goes outside the
+        // lines', so they end on the gutter as the ask box does.
         .child(list_detail::card_scroll_sticky(
             p,
             "teleprompter-text",
-            lines,
+            col().key("teleprompter-inset").child(lines),
             true,
         ))
 }
