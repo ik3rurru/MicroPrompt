@@ -68,11 +68,34 @@ const SPEAKING: f32 = 0.004;
 const VOICE_PAST: usize = SAMPLE_RATE * 3 / 10;
 const VOICE_AHEAD: usize = MIX_HOLD;
 const VOICE_STEP: usize = SAMPLE_RATE / 10;
+/// The user speaking over the others' turn (SU-08): the microphone's audio
+/// is kept aside from just before its first sound of the user's own
+/// ([`OVERLAP_LEAD`]) until [`OVERLAP_QUIET`] without it or the turn comes
+/// back, and, with at least [`OVERLAP_MIN`] of it, transcribed on its own and
+/// put in the thread. The user's own is sound the call's bleed doesn't
+/// explain (`meeting::echo` over the last [`MINE_WINDOW`] ms, every
+/// [`VOICE_STEP`]), so the speakers' echo opens nothing.
+const OVERLAP_LEAD: usize = SAMPLE_RATE / 2;
+const MINE_WINDOW: u64 = 600;
+const OVERLAP_QUIET: usize = SAMPLE_RATE * 3 / 5;
+const OVERLAP_MIN: usize = SAMPLE_RATE * 2 / 5;
+const OVERLAP_MAX: usize = SAMPLE_RATE * 20;
+/// How long `stop` waits for the last overlaps' text.
+const RECOVER_WAIT: Duration = Duration::from_secs(10);
 
 /// The running session's system audio and mixer.
 struct Running {
     system: Option<crate::meeting::SystemAudio>,
     mixer: Option<JoinHandle<()>>,
+    /// Transcribes what the user said over the others.
+    recover: Option<JoinHandle<()>>,
+}
+
+/// What the user said over the others' turn, on the session's timeline.
+pub(super) struct Overlap {
+    start_ms: u64,
+    end_ms: u64,
+    audio: Vec<f32>,
 }
 
 static RUNNING: Mutex<Option<Running>> = Mutex::new(None);
@@ -85,49 +108,103 @@ pub(super) fn connect(pump: SyncSender<Chunk>) -> Result<Option<SyncSender<Chunk
         .labs
         .teleprompter_source;
     tracing::info!(?source, "teleprompter source");
-    let (microphone, system, mixer) = match source {
-        Source::Microphone => (Some(pump), None, None),
+    let (microphone, system, mixer, recover) = match source {
+        Source::Microphone => (Some(pump), None, None, None),
         Source::System => {
             let system = crate::meeting::system_audio(move |samples, rate| {
                 let _ = pump.try_send((samples, rate, None));
             });
-            (None, Some(system), None)
+            (None, Some(system), None, None)
         }
         Source::Both => {
             let (microphone, heard) = mpsc::sync_channel(TAP_CHUNKS);
             let (system, played) = mpsc::sync_channel(TAP_CHUNKS);
+            let (found, overlaps) = mpsc::sync_channel(8);
+            let recover = thread::Builder::new()
+                .name("teleprompter-overlaps".into())
+                .spawn(move || recover(&overlaps))
+                .map_err(|error| format!("couldn't start: {error}"))?;
             let mixer = thread::Builder::new()
                 .name("teleprompter-mixer".into())
-                .spawn(move || take_turns_into(&pump, &heard, &played))
+                .spawn(move || take_turns_into(&pump, &heard, &played, &found))
                 .map_err(|error| format!("couldn't start: {error}"))?;
             let system = crate::meeting::system_audio(move |samples, rate| {
                 let _ = system.try_send((samples, rate, None));
             });
-            (Some(microphone), Some(system), Some(mixer))
+            (Some(microphone), Some(system), Some(mixer), Some(recover))
         }
     };
     let system = match system.transpose() {
         Ok(system) => system,
         Err(error) => return Err(format!("couldn't hear the system audio: {error}")),
     };
-    *lock(&RUNNING) = Some(Running { system, mixer });
+    *lock(&RUNNING) = Some(Running {
+        system,
+        mixer,
+        recover,
+    });
     Ok(microphone)
 }
 
 /// Stops the system audio and the mixer; the microphone's sender is gone.
-pub(super) fn disconnect() {
-    let Some(mut running) = lock(&RUNNING).take() else {
-        return;
-    };
+/// Returns the thread still transcribing overlaps, for [`settle`] once the
+/// stream has finished: its last one waits for the stream's last window.
+pub(super) fn disconnect() -> Option<JoinHandle<()>> {
+    let mut running = lock(&RUNNING).take()?;
     drop(running.system.take());
     if let Some(mixer) = running.mixer.take() {
         let _ = mixer.join();
+    }
+    running.recover.take()
+}
+
+/// Waits a bounded time for the last overlaps' text.
+pub(super) fn settle(recover: Option<JoinHandle<()>>) {
+    let Some(recover) = recover else {
+        return;
+    };
+    let waited = std::time::Instant::now();
+    while !recover.is_finished() && waited.elapsed() < RECOVER_WAIT {
+        thread::sleep(Duration::from_millis(50));
+    }
+    if recover.is_finished() {
+        let _ = recover.join();
+    }
+}
+
+/// Transcribes each overlap that holds speech on the session's model, once
+/// the live window it waits on has closed, and puts it in the thread.
+fn recover(overlaps: &Receiver<Overlap>) {
+    use crate::transcription::stream::Engine as _;
+    let engine = match super::language::engine() {
+        Ok((engine, _, _)) => engine,
+        Err(_) => return,
+    };
+    for Overlap {
+        start_ms,
+        end_ms,
+        audio,
+    } in overlaps
+    {
+        if crate::transcription::speech_detector::contains_speech(&audio) == Some(false) {
+            continue;
+        }
+        match engine.transcribe(audio, &|| false) {
+            Ok(text) if !text.trim().is_empty() => super::recovered(start_ms, end_ms, text.trim()),
+            Ok(_) => {}
+            Err(error) => tracing::warn!(%error, "teleprompter couldn't transcribe an overlap"),
+        }
     }
 }
 
 /// Hands the pump 16 kHz chunks of whoever has the turn, the microphone's
 /// audio or the system's, until the microphone's sender closes.
-fn take_turns_into(pump: &SyncSender<Chunk>, heard: &Receiver<Chunk>, played: &Receiver<Chunk>) {
+fn take_turns_into(
+    pump: &SyncSender<Chunk>,
+    heard: &Receiver<Chunk>,
+    played: &Receiver<Chunk>,
+    found: &SyncSender<Overlap>,
+) {
     let mut microphone = Side {
         pending: vec![0.0; MICROPHONE_DELAY],
         ..Side::default()
@@ -151,6 +228,13 @@ fn take_turns_into(pump: &SyncSender<Chunk>, heard: &Receiver<Chunk>, played: &R
             if pump.send((samples, SAMPLE_RATE as u32, speaker)).is_err() {
                 return;
             }
+        }
+        if !open {
+            turns.close();
+        }
+        for overlap in turns.overlaps.drain(..) {
+            // ponytail: a full queue drops the overlap rather than block the mixer.
+            let _ = found.try_send(overlap);
         }
         if !open {
             return;
@@ -196,6 +280,27 @@ struct Turns {
     /// Whether the system audio holds a voice, as of `voice_at`.
     voice: Option<bool>,
     voice_at: Option<usize>,
+    /// Both sides' frame energies on this timeline, to tell the user's
+    /// voice from the call's bleed.
+    echo: crate::meeting::echo::EchoEnvelope,
+    /// The microphone's last [`OVERLAP_LEAD`] samples.
+    heard: Vec<f32>,
+    /// The user speaking over the others, while it lasts.
+    open: Option<Open>,
+    /// Whether the microphone's sound is the user's, as of `mine_at`.
+    mine: bool,
+    mine_at: Option<usize>,
+    /// Overlaps closed since the caller last took them.
+    overlaps: Vec<Overlap>,
+}
+
+/// An overlap being heard: where it starts, its audio, and how much of it
+/// has sound and how much quiet has followed.
+struct Open {
+    start: usize,
+    audio: Vec<f32>,
+    loud: usize,
+    quiet: usize,
 }
 
 impl Turns {
@@ -214,15 +319,25 @@ impl Turns {
         let frames = microphone.len().max(system.len()).saturating_sub(hold) / FRAME;
         let mut runs: Vec<(Vec<f32>, Option<Speaker>)> = Vec::new();
         for _ in 0..frames {
-            let played: Vec<f32> = system.drain(..FRAME.min(system.len())).collect();
-            let heard: Vec<f32> = microphone.drain(..FRAME.min(microphone.len())).collect();
+            let mut played: Vec<f32> = system.drain(..FRAME.min(system.len())).collect();
+            let mut heard: Vec<f32> = microphone.drain(..FRAME.min(microphone.len())).collect();
+            played.resize(FRAME, 0.0);
+            heard.resize(FRAME, 0.0);
+            let at_ms = (self.position * 1000 / SAMPLE_RATE) as u64;
+            let rate = SAMPLE_RATE as u32;
+            use crate::meeting::MeetingSource;
+            self.echo.push(MeetingSource::System, at_ms, &played, rate);
+            self.echo
+                .push(MeetingSource::Microphone, at_ms, &heard, rate);
             self.played.extend_from_slice(&played);
             let old = self.played.len().saturating_sub(VOICE_PAST);
             self.played.drain(..old);
             if level(&played) > PLAYING && self.voiced(system) {
                 self.others_until = self.position + OTHERS_TAIL;
             }
-            let mut frame = if self.position < self.others_until {
+            let others = self.position < self.others_until;
+            self.overhear(others, &heard);
+            let mut frame = if others {
                 self.speaker = Some(Speaker::Others);
                 played
             } else {
@@ -239,6 +354,68 @@ impl Turns {
             }
         }
         runs
+    }
+
+    /// Follows the microphone's `heard` frame: while the `others` hold the
+    /// turn, its sound opens or extends an overlap, which closes after
+    /// [`OVERLAP_QUIET`], at [`OVERLAP_MAX`], or when the turn comes back.
+    fn overhear(&mut self, others: bool, heard: &[f32]) {
+        let loud = others && level(heard) > SPEAKING && self.mine();
+        if others && (loud || self.open.is_some()) {
+            let (lead, position) = (&self.heard, self.position);
+            let open = self.open.get_or_insert_with(|| Open {
+                start: position - lead.len(),
+                audio: lead.clone(),
+                loud: 0,
+                quiet: 0,
+            });
+            open.audio.extend_from_slice(heard);
+            if loud {
+                open.loud += heard.len();
+                open.quiet = 0;
+            } else {
+                open.quiet += heard.len();
+            }
+            if open.quiet >= OVERLAP_QUIET || open.audio.len() >= OVERLAP_MAX {
+                self.close();
+            }
+        } else {
+            self.close();
+        }
+        self.heard.extend_from_slice(heard);
+        let old = self.heard.len().saturating_sub(OVERLAP_LEAD);
+        self.heard.drain(..old);
+    }
+
+    /// Whether the microphone's sound up to this frame is the user's,
+    /// asking the echo model at most once per [`VOICE_STEP`].
+    fn mine(&mut self) -> bool {
+        if self
+            .mine_at
+            .is_none_or(|at| self.position >= at + VOICE_STEP)
+        {
+            let end_ms = ((self.position + FRAME) * 1000 / SAMPLE_RATE) as u64;
+            let start_ms = end_ms.saturating_sub(MINE_WINDOW);
+            self.mine = self.echo.heard_locally(start_ms, end_ms);
+            self.mine_at = Some(self.position);
+        }
+        self.mine
+    }
+
+    /// Ends the open overlap, keeping it when enough of it was the user's.
+    fn close(&mut self) {
+        let Some(open) = self.open.take() else {
+            return;
+        };
+        let ms = |at: usize| (at * 1000 / SAMPLE_RATE) as u64;
+        let (start_ms, end_ms) = (ms(open.start), ms(open.start + open.audio.len()));
+        if open.loud >= OVERLAP_MIN {
+            self.overlaps.push(Overlap {
+                start_ms,
+                end_ms,
+                audio: open.audio,
+            });
+        }
     }
 
     /// Whether the system audio around the current frame holds a voice,
@@ -322,6 +499,64 @@ mod tests {
         assert_eq!(
             turns.take(&mut microphone, &mut system, 0),
             [(vec![0.2; second], Some(Speaker::Others))]
+        );
+    }
+
+    #[test]
+    fn what_i_say_over_the_others_is_kept_aside_and_their_echo_is_not() {
+        use crate::meeting::echo::tests::{bleed, speech};
+        let (second, frames) = (SAMPLE_RATE, |seconds: usize| seconds * SAMPLE_RATE);
+        let theirs = speech(8.0, 11);
+        // Headphones: the microphone hears only me, from 3 s to 5 s, over them.
+        let mut mine = vec![0.0; theirs.len()];
+        for (offset, sample) in speech(2.0, 29).iter().enumerate() {
+            mine[frames(3) + offset] = sample * 0.9;
+        }
+        let mut turns = Turns::default();
+        let (mut microphone, mut system) = (mine, theirs.clone());
+        let runs = turns.take(&mut microphone, &mut system, 0);
+        assert!(
+            runs.iter()
+                .all(|(_, speaker)| *speaker == Some(Speaker::Others))
+        );
+        turns.close();
+        let [overlap] = turns.overlaps.as_slice() else {
+            panic!("one overlap, not {}", turns.overlaps.len());
+        };
+        assert!(
+            (2_700..=3_100).contains(&overlap.start_ms),
+            "{}",
+            overlap.start_ms
+        );
+        assert!(
+            (5_000..=5_700).contains(&overlap.end_ms),
+            "{}",
+            overlap.end_ms
+        );
+        assert!(overlap.audio.len() >= 2 * second);
+        // Speakers: the microphone hears them alone, as late as the mixer
+        // delays it; nothing is kept.
+        let echo = bleed(&theirs, MICROPHONE_DELAY * 1000 / SAMPLE_RATE + 60, 0.3);
+        let mut turns = Turns::default();
+        let (mut microphone, mut system) = (echo.clone(), theirs.clone());
+        turns.take(&mut microphone, &mut system, 0);
+        turns.close();
+        assert!(turns.overlaps.is_empty());
+        // Speakers, and me over them from 3 s: mine is kept.
+        let mut heard = echo;
+        for (offset, sample) in speech(2.0, 29).iter().enumerate() {
+            heard[frames(3) + offset] += sample * 0.9;
+        }
+        let mut turns = Turns::default();
+        let (mut microphone, mut system) = (heard, theirs);
+        turns.take(&mut microphone, &mut system, 0);
+        turns.close();
+        let kept = turns.overlaps.iter().map(|it| (it.start_ms, it.end_ms));
+        let kept = kept.collect::<Vec<_>>();
+        assert!(
+            matches!(kept.as_slice(), [(start, end)]
+                if (2_300..=3_300).contains(start) && (5_000..=6_000).contains(end)),
+            "{kept:?}"
         );
     }
 

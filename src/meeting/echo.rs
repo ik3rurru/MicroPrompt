@@ -133,7 +133,7 @@ impl Track {
 
 /// Frame energies of both meeting tracks on one millisecond timeline.
 #[derive(Debug, Default)]
-pub(super) struct EchoEnvelope {
+pub(crate) struct EchoEnvelope {
     tracks: [Track; 2],
     /// Envelope correlation and lag per coupling block.
     couplings: RefCell<HashMap<i64, Option<(f32, i64)>>>,
@@ -141,7 +141,7 @@ pub(super) struct EchoEnvelope {
 
 impl EchoEnvelope {
     /// Appends audio that starts at `start_ms` on the timeline.
-    pub(super) fn push(
+    pub(crate) fn push(
         &mut self,
         source: MeetingSource,
         start_ms: u64,
@@ -188,6 +188,17 @@ impl EchoEnvelope {
             self.couplings.borrow_mut().insert(block, best);
         }
         best
+    }
+
+    /// Whether someone in the room speaks on the microphone between
+    /// `start_ms` and `end_ms`, rather than the call's bleed: mostly local
+    /// sound, or half a second of it within one second (the Teleprompter's
+    /// overlaps, SU-08).
+    pub(crate) fn heard_locally(&self, start_ms: u64, end_ms: u64) -> bool {
+        self.locality(start_ms, end_ms)
+            .is_some_and(|Locality { share, burst }| {
+                share >= LOCAL_MIN_LOCAL || burst >= BURST_MIN_FRAMES
+            })
     }
 
     /// Classifies the microphone between `start_ms` and `end_ms`, or `None`
@@ -343,7 +354,7 @@ fn percentile(values: &mut [f32], fraction: f32) -> Option<f32> {
 }
 
 #[cfg(test)]
-pub(super) mod tests {
+pub(crate) mod tests {
     use super::*;
 
     const RATE: u32 = 16_000;

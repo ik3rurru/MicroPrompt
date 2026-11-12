@@ -48,7 +48,7 @@ pub(crate) use os::{
     system_audio_authorization, system_audio_ready,
 };
 mod delta;
-mod echo;
+pub(crate) mod echo;
 mod finish;
 pub(crate) mod finished_events;
 pub(crate) mod generator;

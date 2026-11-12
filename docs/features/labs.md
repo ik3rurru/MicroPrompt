@@ -55,7 +55,14 @@ Feature             Pane  Toggle (settings.json, hex settings)   On: what it doe
 │                                        History too (src/teleprompter/source.rs; scene teleprompter-speakers; turns and cut
 │                                        unit-tested; the detector probed on 10 recorded phrases: noise alone never took the turn,
 │                                        a voice held it for 96-100% of its frames, 90-100% under noise at half its level; no call
-│                                        measured; words said over the others' voice are lost until SU-08)
+│                                        measured); words said over the others' voice are kept aside (SU-08): from the first
+│                                        microphone sound the call's bleed doesn't explain (meeting::echo's heard_locally over the
+│                                        last 0.6 s, every 0.1 s) until 0.6 s without it or the turn coming back, then, with 0.4 s of
+│                                        it and speech by the detector, transcribed offline on the same model (Engine::transcribe,
+│                                        waiting for the live window) and put in the thread as Me after the last line begun before
+│                                        it, and in History, unless 60% of its words are the others' lines around it (overlap and
+│                                        insertion unit-tested with synthetic speech, headphones and speakers; no call measured; a
+│                                        recovered line shows once the others' live window closes, up to 25 s later)
 │                                        Open script… shows a .txt or .md file in large type, scrolling, in place of the text until
 │                                        Close script; Markdown draws formatted through rune-kit's `markdown` renderer: headings, emphasis,
 │                                        nested lists, quotes, code, tables, block by block in a centred reading column (src/teleprompter/script.rs;

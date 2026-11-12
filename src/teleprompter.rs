@@ -147,6 +147,9 @@ struct Live {
     /// The History entry the stopped session was kept as, where its notes
     /// go (AS-06).
     kept: Option<u64>,
+    /// What the user said over the others, transcribed apart (SU-08):
+    /// start, end, and text, for History.
+    recovered: Vec<(u64, u64, String)>,
 }
 
 impl Live {
@@ -174,6 +177,7 @@ impl Live {
             others_only: false,
             hinted_turn: None,
             kept: None,
+            recovered: Vec::new(),
         }
     }
 
@@ -271,6 +275,75 @@ pub(crate) fn use_in_ai(first: usize, used: bool) {
             live.view.unused.insert(first);
         }
     });
+}
+
+/// What the user said over the others from `start_ms` to `end_ms`,
+/// transcribed once the overlap ended (SU-08).
+pub(crate) fn recovered(start_ms: u64, end_ms: u64, text: &str) {
+    update(|live| insert_recovered(live, start_ms, end_ms, text));
+}
+
+/// Puts a line of the user's in its place in the thread, after the last
+/// line begun before it, unless its words are mostly those of the others'
+/// lines around it: their voice through the speakers.
+fn insert_recovered(live: &mut Live, start_ms: u64, end_ms: u64, text: &str) {
+    let view = &mut live.view;
+    let theirs = (0..view.segments.len())
+        .filter(|&index| view.speakers[index] == Some(Speaker::Others))
+        .filter(|&index| {
+            let (start, end) = view.times[index];
+            start <= end_ms + 1_000 && start_ms <= end + 1_000
+        })
+        .map(|index| view.segments[index].as_str())
+        .collect::<Vec<_>>()
+        .join(" ");
+    if repeats(text, &theirs) {
+        tracing::info!(
+            start_ms,
+            end_ms,
+            "teleprompter overlap repeats the others; left out"
+        );
+        return;
+    }
+    let at = view
+        .times
+        .iter()
+        .rposition(|(start, _)| *start <= start_ms)
+        .map_or(0, |index| index + 1);
+    view.segments.insert(at, text.to_string());
+    view.speakers.insert(at, Some(Speaker::Me));
+    view.times.insert(at, (start_ms, end_ms));
+    // Everything that counts lines moves past the new one.
+    view.unused = view
+        .unused
+        .iter()
+        .map(|&index| index + usize::from(index >= at))
+        .collect();
+    for answer in &mut view.answers {
+        answer.after += usize::from(answer.after > at);
+    }
+    if let Some(turn) = live.hinted_turn.as_mut() {
+        *turn += usize::from(*turn >= at);
+    }
+    live.recovered.push((start_ms, end_ms, text.to_string()));
+}
+
+/// Whether at least 60% of `mine`'s words are in `theirs`.
+// ponytail: word sets, not order; a short "sí" of the user's right after
+// theirs is left out too.
+fn repeats(mine: &str, theirs: &str) -> bool {
+    let words = |text: &str| {
+        text.split(|c: char| !c.is_alphanumeric())
+            .filter(|word| !word.is_empty())
+            .map(str::to_lowercase)
+            .collect::<Vec<_>>()
+    };
+    let theirs = words(theirs)
+        .into_iter()
+        .collect::<std::collections::HashSet<_>>();
+    let mine = words(mine);
+    let repeated = mine.iter().filter(|word| theirs.contains(*word)).count();
+    !mine.is_empty() && repeated * 5 >= mine.len() * 3
 }
 
 /// Changes the view through `change`, then wakes the window.
@@ -429,12 +502,13 @@ fn stop() -> ControlReply {
     update(|live| live.view.stopping = true);
     // The pump sends what it already took, then ends with the tap.
     *lock(&TAP) = None;
-    source::disconnect();
+    let recovering = source::disconnect();
     let _ = session.pump.join();
     let end = session.stream.finish(FINISH_WAIT, &|| false);
     if end.is_none() {
         session.stream.cancel();
     }
+    source::settle(recovering);
     let _ = session.reader.join();
     update(|live| {
         live.view.running = false;
@@ -449,7 +523,14 @@ fn stop() -> ControlReply {
             segments,
             duration_ms,
         }) => {
-            let (saved, kept) = keep(&text, &segments, &live.turns, duration_ms, session.model);
+            let (saved, kept) = keep(
+                &text,
+                &segments,
+                &live.turns,
+                &live.recovered,
+                duration_ms,
+                session.model,
+            );
             live.kept = kept;
             let reply = format!(
                 "Teleprompter stopped after {elapsed} s{saved}; {}\n{text}",
@@ -635,13 +716,14 @@ fn keep(
     text: &str,
     segments: &[crate::transcription::stream::Segment],
     turns: &[(u64, Speaker)],
+    recovered: &[(u64, u64, String)],
     duration_ms: u64,
     model: String,
 ) -> (&'static str, Option<u64>) {
     if text.trim().is_empty() {
         return ("", None);
     }
-    let segments = segments
+    let mut segments = segments
         .iter()
         .map(|segment| HistorySegment {
             start_ms: segment.start_ms,
@@ -651,7 +733,17 @@ fn keep(
                 &segment.text,
             ),
         })
+        .chain(
+            recovered
+                .iter()
+                .map(|(start_ms, end_ms, text)| HistorySegment {
+                    start_ms: *start_ms,
+                    end_ms: *end_ms,
+                    text: labelled(Some(Speaker::Me), text),
+                }),
+        )
         .collect::<Vec<_>>();
+    segments.sort_by_key(|segment| segment.start_ms);
     let final_text = if turns.is_empty() {
         text.to_string()
     } else {
@@ -786,6 +878,43 @@ mod tests {
         assert_eq!(live.text(), "Hola. Esto es. una prueba");
         assert_eq!(median(vec![300, 100, 200]), Some(200));
         assert_eq!(median(vec![]), None);
+    }
+
+    #[test]
+    fn what_i_said_over_them_goes_in_its_place_unless_it_is_their_echo() {
+        let mut live = Live::new();
+        let view = &mut live.view;
+        view.segments = vec![
+            "Me: hola.".into(),
+            "Ellos hablan del presupuesto.".into(),
+            "Vale.".into(),
+        ];
+        view.speakers = vec![Some(Speaker::Me), Some(Speaker::Others), Some(Speaker::Me)];
+        view.times = vec![(0, 1_000), (2_000, 8_000), (9_000, 10_000)];
+        view.unused.insert(2);
+        view.answers.push(Answer {
+            action: prompts::Action::Suggest,
+            after: 3,
+            text: String::new(),
+            done: true,
+            error: None,
+            used: true,
+            question: None,
+        });
+        live.hinted_turn = Some(1);
+        // Said at 4 s, over their line begun at 2 s: right after it.
+        insert_recovered(&mut live, 4_000, 6_000, "Pero eso ya lo vimos.");
+        assert_eq!(live.view.segments[2], "Pero eso ya lo vimos.");
+        assert_eq!(live.view.speakers[2], Some(Speaker::Me));
+        assert_eq!(live.view.times[2], (4_000, 6_000));
+        assert!(live.view.unused.contains(&3) && !live.view.unused.contains(&2));
+        assert_eq!(live.view.answers[0].after, 4);
+        assert_eq!(live.hinted_turn, Some(1));
+        assert_eq!(live.recovered.len(), 1);
+        // Their own words, heard through the speakers: left out.
+        insert_recovered(&mut live, 5_000, 7_000, "hablan del presupuesto");
+        assert_eq!(live.view.segments.len(), 4);
+        assert_eq!(live.recovered.len(), 1);
     }
 
     #[test]
