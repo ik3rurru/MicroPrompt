@@ -190,13 +190,18 @@ pub(super) fn title_bar(element: El) -> El {
 
 /// The title bar of the content panel: the title, a view switch that stays
 /// beside it, and the pane's actions on the right. The title is the pane's
-/// level 1 heading.
+/// level 1 heading. Actions that don't fit beside the title wrap onto more
+/// lines under it, still at the right, so none is pushed out of a narrow
+/// window; one line is 52 pt tall, as before.
 pub(super) fn pane_header(p: Paint, title: &str, switch: Option<El>, actions: Vec<El>) -> El {
     title_bar(row())
         .key("pane-header")
-        .h(52.0)
+        .min_h(52.0)
         .px(METRICS.gutter)
+        .py(10.0)
         .gap(8.0)
+        .flex_wrap()
+        .justify_end()
         .center_y()
         .child(
             text(title)

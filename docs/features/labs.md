@@ -32,6 +32,8 @@ Feature             Pane  Toggle (settings.json, hex settings)   On: what it doe
 │                                        Teleprompter joins the sidebar: the session's text as messages (Labs › Assistant), provisional words faint, Start/Stop session
 │                                        New session (while one runs) stops it, kept in History as any stop, and starts a fresh one
 │                                        with the same source and language, its thread and answers empty (crate::teleprompter::restart)
+│                                        a narrow window wraps the header's actions onto lines under the title, right-aligned, so none is cut
+│                                        (sidebar::pane_header, every pane; checked with tools/microprompt-ui/widths.py)
 │                                        (src/teleprompter.rs, src/rune_ui/labs/teleprompter.rs; scenes teleprompter, teleprompter-idle;
 │                                        checked by hand on Windows with HEX_AUDIO_FIXTURE and UI Automation; no golden yet)
 │                                        a stopped session is kept in History (kind Teleprompter, timed lines, 128 KiB of text)
