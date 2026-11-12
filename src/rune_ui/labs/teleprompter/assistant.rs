@@ -8,8 +8,9 @@ use rune_kit::{Select, SelectAppearance};
 
 use crate::desktop::i18n::tr;
 use crate::rune_ui::controls::{
-    ButtonKind, METRICS, Paint, button, card, described_row, segmented,
+    ButtonKind, METRICS, Paint, PushSize, button, card, described_row, push_button, segmented,
 };
+use crate::rune_ui::icons::{LIGHTBULB, MESSAGE, NOTES, SPARKLES};
 use crate::rune_ui::platform::PlatformState;
 use crate::rune_ui::{Menu, Ui};
 use crate::teleprompter::assistant::{self, Status};
@@ -88,7 +89,8 @@ pub(in crate::rune_ui) fn card_for(ui: &Ui, p: Paint) -> Option<El> {
     )
 }
 
-/// Suggest, Answer, Notes, and Insights; the one answering says so, and
+/// Suggest, Answer, Notes, and Insights, each with its icon and, on hover,
+/// what it does and its shortcut (Windows); the one answering says so, and
 /// none starts another until it is done.
 fn actions(ui: &Ui, p: Paint) -> El {
     let answering = ui
@@ -111,17 +113,53 @@ fn actions(ui: &Ui, p: Paint) -> El {
         } else {
             tr(action.label())
         };
-        row = row.child(button(
-            p,
-            &format!("assistant-{}", action.label().to_lowercase()),
-            label,
-            ButtonKind::Secondary,
-            move |_, _| {
-                assistant::ask(action, None);
-            },
-        ));
+        let (glyph, help) = look(action);
+        let mut button = push_button(label, ButtonKind::Secondary)
+            .icon(glyph)
+            .help(tr(help));
+        if let Some(keys) = shortcut(ui, action) {
+            button = button.shortcut(keys);
+        }
+        row = row.child(
+            button
+                .on_press(move |_: &mut Ui| {
+                    assistant::ask(action, None);
+                })
+                .build_push(p.k)
+                .key(format!("assistant-{}", action.label().to_lowercase())),
+        );
     }
     row
+}
+
+/// An action button's icon and what it does.
+fn look(action: Action) -> (&'static rune::Icon, &'static str) {
+    match action {
+        Action::Suggest => (&SPARKLES, "What to say now, from the conversation"),
+        Action::Answer => (&MESSAGE, "The full answer to what was asked"),
+        Action::Notes => (
+            &NOTES,
+            "Notes on what was said: topics, decisions, and tasks",
+        ),
+        Action::Insights => (&LIGHTBULB, "Strengths, gaps, and what to do next"),
+        Action::Hint | Action::Ask => (&SPARKLES, ""),
+    }
+}
+
+/// The keys Suggest or Answer run from any app, when bound (Windows
+/// registers them; elsewhere a desktop keybinding runs the command).
+fn shortcut(ui: &Ui, action: Action) -> Option<String> {
+    use crate::app_settings::TeleprompterKey;
+    let key = match action {
+        Action::Suggest => TeleprompterKey::Suggest,
+        Action::Answer => TeleprompterKey::Answer,
+        _ => return None,
+    };
+    if !cfg!(target_os = "windows") || !key.on(&ui.settings) {
+        return None;
+    }
+    let binding = ui.settings.labs.teleprompter_key(key)?;
+    Some(binding.keycaps().join("+"))
 }
 
 /// Up to this many models show side by side; more open from a select.

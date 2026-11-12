@@ -7,7 +7,7 @@
 mod assistant;
 pub(in crate::rune_ui) mod script;
 
-use rune::{El, Span, TextStyle, col, rich, row, text};
+use rune::{El, Span, TextStyle, Transition, col, rich, row, text};
 
 use crate::desktop::i18n::tr;
 use crate::rune_ui::controls::{ButtonKind, METRICS, Paint, button, card, pulsing_dot, row_switch};
@@ -259,7 +259,8 @@ fn body(p: Paint, view: &View, assistant: bool) -> El {
                 .gap(2.0)
                 .pt(if header.is_some() { 6.0 } else { 0.0 })
                 .children(header)
-                .child(words),
+                .child(words)
+                .transition(arrives()),
         );
     }
     col()
@@ -372,6 +373,18 @@ fn answer(
         .child(header)
         .children(typed)
         .child(body.key("answer-text"))
+        .transition(arrives())
+}
+
+/// How a new message or answer joins the thread: it rises a few points as
+/// it fades in, drawn only (its place in the thread is there at once, so
+/// nothing below jumps). Keyed by its first segment or its answer, only a
+/// new one enters; Rune keeps the fade alone under Reduce Motion.
+fn arrives() -> Transition {
+    Transition::asymmetric(
+        Transition::opacity().combined(Transition::offset(0.0, 8.0)),
+        Transition::opacity(),
+    )
 }
 
 /// The box under the thread for writing to the assistant (AS-04): Enter or

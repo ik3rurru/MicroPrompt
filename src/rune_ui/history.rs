@@ -8,6 +8,7 @@
 //! Teleprompter session (MicroPrompt) saves as `.txt` or `.srt`.
 
 use std::sync::mpsc::{Receiver, TryRecvError, channel};
+use std::time::{Duration, Instant};
 
 use rune::{El, TextEdit, Tx, col, row, text};
 use rune_kit::{Menu as KitMenu, MenuItem, Placement, Select, SelectAppearance, TextInput};
@@ -47,8 +48,10 @@ pub(super) struct HistoryPane {
     pub(super) pending: Option<Pending>,
     /// The version whose Copy was pressed last: entry and index.
     pub(super) version_copied: Option<(u64, usize)>,
-    /// A Teleprompter session's last export: where it went, or why not.
-    pub(super) exported: Option<(u64, Result<String, String>)>,
+    /// A Teleprompter session's last export, shown as a toast: where it
+    /// went, or why not, and when a saved one hides (an error stays until
+    /// closed).
+    pub(super) exported: Option<(Result<String, String>, Option<Instant>)>,
     /// The pane's laid-out width: narrow, it shows the list or the
     /// selected entry, not both (`list_detail::body_at`).
     width: f32,
@@ -136,7 +139,7 @@ impl HistoryPane {
     /// searches again only when the query or the store's revision changed,
     /// and sums the stats again only when the entries or the toggle changed.
     pub(super) fn poll(&mut self, visible: bool) -> bool {
-        let answered = self.poll_again();
+        let answered = self.poll_again() | self.hide_export();
         let Some(store) = self.store.as_ref().filter(|_| visible) else {
             return answered;
         };
@@ -152,6 +155,15 @@ impl HistoryPane {
             return true;
         }
         answered
+    }
+
+    /// Hides the export's toast once its time is up. True when it did.
+    fn hide_export(&mut self) -> bool {
+        let due = matches!(self.exported, Some((_, Some(at))) if Instant::now() >= at);
+        if due {
+            self.exported = None;
+        }
+        due
     }
 
     /// Takes Transcribe again's answer once its worker sends it.
@@ -445,6 +457,7 @@ fn delete(ui: &mut Ui, id: u64) {
 pub(super) fn pane(ui: &Ui, p: Paint, layer: &mut Vec<El>) -> (Vec<El>, El) {
     let pane = &ui.history;
     let actions = header_actions(ui, p, layer);
+    layer.extend(export_toast(ui, p));
     let mut notices = Vec::new();
     if let Some(error) = &pane.error {
         notices.push(error_panel(
@@ -800,7 +813,7 @@ fn detail(ui: &Ui, p: Paint, layer: &mut Vec<El>) -> El {
         body = body.child(rune_kit::Markdown::new(notes).render(&style).key("notes"));
     }
     if entry.kind == HistoryKind::Teleprompter {
-        body = body.child(export_section(ui, p, id, entry.notes.is_some()));
+        body = body.child(export_section(p, id, entry.notes.is_some()));
     }
     body = body.child(ld::facts(p, facts));
     if ui.settings.labs.keep_recordings && entry.has_recording() {
@@ -846,27 +859,22 @@ fn detail(ui: &Ui, p: Paint, layer: &mut Vec<El>) -> El {
 
 /// A Teleprompter session's Save as .txt and .srt (and its notes as .md),
 /// and where the last went.
-fn export_section(ui: &Ui, p: Paint, id: u64, has_notes: bool) -> El {
+fn export_section(p: Paint, id: u64, has_notes: bool) -> El {
     use crate::teleprompter::Export;
     let save = |export: Export| {
-        move |ui: &mut Ui, _: &mut Tx| {
+        move |ui: &mut Ui, tx: &mut Tx| {
             let Some(entry) = ui.history.entry(id).cloned() else {
                 return;
             };
             let saved =
                 crate::teleprompter::export(&entry, export).map(|path| path.display().to_string());
-            ui.history.exported = Some((id, saved));
+            let hide = saved.is_ok().then(|| Instant::now() + TOAST_FOR);
+            if hide.is_some() {
+                tx.wake_after(TOAST_FOR);
+            }
+            ui.history.exported = Some((saved, hide));
         }
     };
-    let note = ui
-        .history
-        .exported
-        .as_ref()
-        .filter(|(exported, _)| *exported == id)
-        .map(|(_, saved)| match saved {
-            Ok(path) => (tr_fill("Saved to {}", path), p.muted()),
-            Err(error) => (tr_fill("Couldn't save it: {}", error), p.danger()),
-        });
     col()
         .key("export")
         .gap(6.0)
@@ -897,13 +905,37 @@ fn export_section(ui: &Ui, p: Paint, id: u64, has_notes: bool) -> El {
                     )
                 })),
         )
-        .children(note.map(|(copy, color)| {
-            text(copy)
-                .key("export-note")
-                .font(p.k.ty.small)
-                .color(color)
-                .wrap()
-        }))
+}
+
+/// How long the toast for a saved export shows.
+const TOAST_FOR: Duration = Duration::from_secs(4);
+
+/// The last export as a toast in the window's corner: where the file went,
+/// or why it couldn't be saved.
+fn export_toast(ui: &Ui, p: Paint) -> Option<El> {
+    let (saved, _) = ui.history.exported.as_ref()?;
+    let (title, detail, glyph, color) = match saved {
+        Ok(path) => (
+            tr("Saved"),
+            path,
+            &rune_theme_opencode::icons::CIRCLE_CHECK,
+            p.success(),
+        ),
+        Err(error) => (
+            tr("Couldn't save it"),
+            error,
+            &rune_theme_opencode::icons::WARNING,
+            p.danger(),
+        ),
+    };
+    // A path has no spaces to wrap at: let it break after each folder.
+    let detail = detail.replace('\\', "\\\u{200B}").replace('/', "/\u{200B}");
+    let toast = rune_kit::Toast::new("export-toast", title)
+        .description(detail)
+        .lead(rune::icon(glyph, 16.0).color(color))
+        .on_close(|ui: &mut Ui| ui.history.exported = None)
+        .build(p.k);
+    Some(rune_kit::ToastRegion::new().toast(toast).build(p.k))
 }
 
 /// Labs › Keep recordings: Transcribe again's menu of installed models, and

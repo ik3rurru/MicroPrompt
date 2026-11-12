@@ -37,7 +37,8 @@ Feature             Pane  Toggle (settings.json, hex settings)   On: what it doe
 │                                        (src/teleprompter.rs, src/rune_ui/labs/teleprompter.rs; scenes teleprompter, teleprompter-idle;
 │                                        checked by hand on Windows with HEX_AUDIO_FIXTURE and UI Automation; no golden yet)
 │                                        a stopped session is kept in History (kind Teleprompter, timed lines, 128 KiB of text)
-│                                        and saves as .txt or .srt into Documents/MicroPrompt (scene history-teleprompter)
+│                                        and saves as .txt or .srt into Documents/MicroPrompt (scene history-teleprompter); a toast in
+│                                        the window's corner names the file (hides after 4 s) or why it failed (stays until closed)
 │                                        IN-04: a History pane under 680 points wide (list_detail::body_at) shows the list or the
 │                                        selected entry, not both; the entry's card has Back (scenes history-teleprompter,
 │                                        history-unselected; layout read from on_layout, so snaps need --at 0.5; not tried live)
@@ -109,6 +110,10 @@ Feature             Pane  Toggle (settings.json, hex settings)   On: what it doe
 │                                        typed context, and the notes document are unit-tested; an ignored test runs Ask, Notes, and
 │                                        Insights on this computer's Ollama (gemma4:12b warm: notes in about 1 s); not pressed in
 │                                        the running app.
+│                                        IN-06: the four buttons lead with an icon and say on hover what they do, with Suggest's and
+│                                        Answer's shortcut on Windows when bound; a new message or answer rises into the thread as it
+│                                        fades in (a fade alone under Reduce Motion). Checked in --snap scenes, settled; the
+│                                        entrance and the tooltips not watched in the running app.
 ├── Live chapters   no    labs.live_chapters           (macOS)   chapters a meeting while it records, boundary pass after Stop
 ├── Vocabulary biasing no labs.vocabulary_biasing                Parakeet transcription biased toward the vocabulary (#452/#457)
 ├── Switch model with keyboard language  no  keyboard_model_switching.enabled  (macOS, Windows, X11)

@@ -88,7 +88,8 @@ pub(super) const SCENES: &[Scene] = &[
         ui.history.clear_armed = true;
         ui.pane = Pane::History;
     }),
-    // MicroPrompt: a kept Teleprompter session, selected, just saved as .srt.
+    // MicroPrompt: a kept Teleprompter session, selected, just saved as .srt
+    // (its toast in the window's corner).
     ("history-teleprompter", |ui| {
         *ui = portal_fixture();
         ui.history = history::HistoryPane::fixture();
@@ -109,8 +110,8 @@ pub(super) const SCENES: &[Scene] = &[
         ui.history.entries.insert(0, session);
         ui.history.selected = Some(4);
         ui.history.exported = Some((
-            4,
             Ok("C:\\Users\\you\\Documents\\MicroPrompt\\Teleprompter 2026-11-07 21-30.srt".into()),
+            None,
         ));
         ui.pane = Pane::History;
     }),

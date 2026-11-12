@@ -341,3 +341,31 @@ fn settings_reopened_sends_its_whole_tree_to_the_new_adapter() {
         "the reopened window shows Settings"
     );
 }
+
+/// MicroPrompt: the assistant's buttons keep their names and say what they
+/// do (their tooltip); Suggest also its shortcut on Windows, where it's bound.
+#[test]
+fn the_assistant_buttons_say_what_they_do() {
+    let rt = runtime("teleprompter-assistant-idle");
+    for (key, label) in [
+        ("assistant-suggest", "Suggest"),
+        ("assistant-answer", "Answer"),
+        ("assistant-notes", "Notes"),
+        ("assistant-insights", "Insights"),
+    ] {
+        let button = node(&rt, key);
+        assert_eq!(button["role"], "button", "{key}");
+        assert_eq!(name(&button), label, "{key}");
+        let description = button["description"].as_str().unwrap_or_default();
+        assert!(!description.is_empty(), "{key} has no description");
+    }
+    let shortcut = node(&rt, "assistant-suggest")["shortcut"]
+        .as_str()
+        .map(str::to_owned);
+    if cfg!(target_os = "windows") {
+        assert!(shortcut.is_some_and(|keys| keys.contains('S')));
+    } else {
+        assert_eq!(shortcut, None);
+    }
+    assert_eq!(node(&rt, "assistant-answer")["shortcut"].as_str(), None);
+}

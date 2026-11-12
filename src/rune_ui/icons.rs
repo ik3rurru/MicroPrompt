@@ -272,3 +272,29 @@ line_icon!(
         "m9 9 6 6"
     ]
 );
+// MicroPrompt: the Teleprompter assistant's Answer, Notes, and Insights.
+line_icon!(
+    MESSAGE,
+    "hex-row-message",
+    ["M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"]
+);
+line_icon!(
+    NOTES,
+    "hex-row-notes",
+    [
+        "M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7z",
+        "M14 2v4a2 2 0 0 0 2 2h4",
+        "M16 13H8",
+        "M16 17H8",
+        "M10 9H8",
+    ]
+);
+line_icon!(
+    LIGHTBULB,
+    "hex-row-lightbulb",
+    [
+        "M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5",
+        "M9 18h6",
+        "M10 22h4",
+    ]
+);

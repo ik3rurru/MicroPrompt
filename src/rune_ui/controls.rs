@@ -819,16 +819,22 @@ pub(super) fn button(
     kind: ButtonKind,
     press: impl Fn(&mut Ui, &mut Tx) + 'static,
 ) -> El {
+    push_button(label, kind)
+        .on_press_tx(press)
+        .build_push(p.k)
+        .key(key)
+}
+
+/// [`button`]'s kit `Button` before it is built, for one that also leads
+/// with an icon or shows a tooltip and shortcut on hover; finish it with
+/// `build_push` and a key.
+pub(super) fn push_button(label: &str, kind: ButtonKind) -> Button {
     let variant = match kind {
         ButtonKind::Primary => ButtonVariant::Contrast,
         ButtonKind::Secondary => ButtonVariant::Neutral,
         ButtonKind::Danger => ButtonVariant::Danger,
     };
-    Button::new(label)
-        .variant(variant)
-        .on_press_tx(press)
-        .build_push(p.k)
-        .key(key)
+    Button::new(label).variant(variant)
 }
 
 /// An icon-only Secondary button the height of [`button`].
