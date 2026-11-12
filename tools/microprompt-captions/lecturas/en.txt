@@ -1,0 +1,13 @@
+This morning I left home early because I had a meeting at half past nine. The traffic was worse than usual, so I parked the car at the station and took the train instead. While I was waiting on the platform, I went over my notes for the presentation.
+
+The meeting was with a new client who wants to rebuild the website for their shop. They sell handmade wooden furniture and they have three stores, one in Manchester, one in Leeds and one in Bristol. Their main problem is that most orders still come in by phone, and nobody knows how much stock is left in each warehouse.
+
+I suggested starting with something small. First, a catalogue with photos and prices that updates itself. Then, a simple shopping cart. And finally, if everything goes well, connecting the inventory of all three stores so that anyone can check it from their phone.
+
+They asked how much it would cost and how long it would take. I told them the first phase could be ready in about six weeks, and that the price depends on how many products they want to upload at the start. I think they liked that we are not trying to do everything at once.
+
+After lunch I went back to the office and looked into a bug that was reported yesterday. When a user changes the language of the app, some dates still appear in the old format. It does not seem serious, but it confuses people, especially with days and months.
+
+Late in the afternoon I talked to Martha about the holidays. She wants to take the second half of August and I prefer July, so there is no conflict. What we still do not know is who will be on call during those weeks.
+
+Tomorrow I have to prepare the quote for the furniture client and send a summary of the meeting. I also want to try the new microphone, because the current one sometimes cuts off words when I speak too quietly.

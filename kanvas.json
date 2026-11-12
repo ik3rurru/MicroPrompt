@@ -21,6 +21,18 @@
     {
       "id": "UD",
       "name": "Uso diario"
+    },
+    {
+      "id": "EN",
+      "name": "Entrevistas"
+    },
+    {
+      "id": "AS",
+      "name": "Asistente"
+    },
+    {
+      "id": "IN",
+      "name": "Interfaz"
     }
   ],
   "tasks": [
@@ -141,17 +153,29 @@
     {
       "id": "SU-05",
       "title": "Elegir español o inglés al empezar",
-      "state": "todo",
+      "state": "done",
       "group": "SU",
       "deps": ["SU-02"],
       "at": "2026-11-07T10:47:42Z",
       "by": "claude-code",
-      "desc": "En la ventana eliges el idioma de la sesión (español o inglés) antes de empezar.\n\nOjo: hoy los streams usan el idioma que tiene el dictado; cambiarlo puede recargar el modelo (unos segundos). Hay que ver si se puede cambiar sólo para la sesión.\n\nHecho cuando: una sesión en inglés y otra en español transcriben bien sin tocar Ajustes."
+      "desc": "En la ventana eliges el idioma de la sesión (español o inglés) antes de empezar.\n\nOjo: hoy los streams usan el idioma que tiene el dictado; cambiarlo puede recargar el modelo (unos segundos). Hay que ver si se puede cambiar sólo para la sesión.\n\nHecho cuando: una sesión en inglés y otra en español transcriben bien sin tocar Ajustes.",
+      "notes": [
+        {
+          "at": "2026-11-09T12:45:13Z",
+          "by": "claude-code",
+          "text": "Plan: agente en paralelo (rama propia en worktree). Selector de idioma por sesión en la ventana del teleprompter, sin tocar el idioma del dictado si se puede."
+        },
+        {
+          "at": "2026-11-09T13:08:07Z",
+          "by": "claude-code",
+          "text": "En el panel Teleprompter eliges Español | English junto a «Start session», y la sesión usa ese idioma sin tocar Ajustes y sin recargar el modelo. Está en la rama `worktree-agent-a155fd0cf8c8757ef` (36ed843d), todavía sin unir a main.\n- Probado con voz sintética de Windows: una sesión en español y otra en inglés transcriben bien.\n- Ojo: el idioma solo orienta a Nemotron, no lo obliga; con voz limpia en inglés transcribe bien aunque elijas español. Se nota más con ruido.\n- Con Parakeet Unified English (solo inglés) y Español, la sesión no arranca y pide elegir Nemotron. No probado: el modelo no estaba descargado.\n- Decide: la elección no se guarda entre reinicios (por defecto, el idioma del dictado). ¿La guardamos como hace RE-01 con la fuente de audio?\n- Para comprobar a mano: habla al micro en los dos idiomas."
+        }
+      ]
     },
     {
       "id": "CA-02",
       "title": "Frases mejor cortadas y con punto",
-      "state": "doing",
+      "state": "done",
       "group": "CA",
       "deps": ["SU-01"],
       "at": "2026-11-07T10:47:42Z",
@@ -162,6 +186,26 @@
           "at": "2026-11-08T13:27:39Z",
           "by": "claude-code-ca02",
           "text": "Plan: reproducir con una grabación de referencia (pausa a media frase + silencio final), encontrar por qué se corta la frase y sale '¿', ajustar el corte solo para subtítulos y filtrar frases vacías; PR con antes/después."
+        },
+        {
+          "at": "2026-11-08T14:11:30Z",
+          "by": "claude-code-ca02",
+          "text": "**Qué cambia en los subtítulos**\n\n- Si haces una pausa a media frase, la frase ya no se parte en dos líneas: MicroPrompt espera a oír tus siguientes palabras y deja que el modelo decida si la frase seguía o había terminado.\n- Cada línea termina con su punto (o signo). Si te quedas callado 2,5 s, la frase se cierra con punto.\n- Las líneas sin ninguna palabra (como el \"¿\" que salió en un silencio) ya no aparecen.\n- Las palabras se ven igual de rápido que antes. Lo único que tarda algo más (≈1 s) es que la línea pase de \"provisional\" a \"cerrada\".\n- El dictado con el atajo y las reuniones no cambian.\n\n**Antes y después** (grabación de referencia de 49 s, con 5 pausas a media frase):\n\n| | Antes | Después |\n| --- | ---: | ---: |\n| Frases partidas en dos | 4 | 2 |\n| Líneas sin punto final | 1 | 0 |\n| Dos frases juntas en una línea | 0 | 1 |\n| Palabras perdidas tras pausas | 0 | 0 |\n| Frases fantasma | 0 | 0 |\n\nEjemplo: antes salía \"Esto está capturando el micrófono.\" / \"o está capturando el audio de Windows\"; ahora sale en una sola línea, con su punto. Las dos frases que siguen partidas las partió el propio modelo (oyó un final de frase). El \"¿\" fantasma no se pudo reproducir con sonidos sintéticos, así que está comprobado con una prueba automática.\n\n**PR**: https://github.com/ik3rurru/MicroPrompt/pull/1 (abierto, sin fusionar).\n\n**Qué probar**: inicia una sesión de subtítulos y di una frase con una pausa de 1 o 2 segundos en medio (\"Este modelo… podría ser mejor\"), luego un par de frases normales y quédate callado unos segundos. Debería salir la frase entera en una línea, todas las líneas con punto y ninguna línea suelta de \"¿\". Si ves dos frases distintas unidas con coma, o una línea que tarda en cerrarse, cuéntamelo."
+        },
+        {
+          "at": "2026-11-08T14:20:12Z",
+          "by": "human",
+          "text": "Sent back: revisar hasta que el ci no falle"
+        },
+        {
+          "at": "2026-11-08T14:20:27Z",
+          "by": "claude-code-review",
+          "text": "Revisión del PR #1 y arreglo del fallo de CI en macOS en curso."
+        },
+        {
+          "at": "2026-11-08T14:32:44Z",
+          "by": "claude-code-review",
+          "text": "Revisión terminada y comprobaciones automáticas (CI) en verde en Linux, macOS y Windows.\n\nQué se encontró y se arregló:\n- Fallo que podía perder palabras: si el modelo iba un poco retrasado al llegar una pausa a mitad de frase, el subtítulo podía cortarse antes de tiempo y comerse las últimas palabras antes de la pausa (por ejemplo, \"Gracias. Este modelo… podría\" se quedaba en \"Gracias.\" y \"Este modelo\" desaparecía). Arreglado: mientras dura la pausa, se cuentan también las palabras que el modelo termina de escribir. Hay una prueba automática que lo comprueba.\n- El CI fallaba en macOS por una función del panel del teleprompter que en Mac no se usa. Arreglado (ahora sólo se compila en Linux y Windows).\n\nLo que queda (no se ha tocado):\n- Con un modelo muy lento (Parakeet Unified) aún podría pasar si la pausa es más corta que su retraso. Con Nemotron, que es el que se usa por defecto, no.\n- Detalles menores de puntuación (comillas al final de la frase) que los modelos actuales casi nunca producen.\n\nQué probar: habla con pausas a mitad de frase, sobre todo justo después de terminar una frase corta (\"Gracias. Este modelo… podría funcionar\"), y comprueba que no falte ninguna palabra en los subtítulos. El PR no está fusionado."
         }
       ]
     },
@@ -173,44 +217,107 @@
       "deps": ["CA-01"],
       "at": "2026-11-07T10:47:42Z",
       "by": "claude-code",
-      "desc": "Comprobar con grabaciones tuyas (no voz sintética), de varios minutos y en los dos idiomas, que el ajuste rápido no empeora la precisión, y comparar inglés con Parakeet Unified English.\n\nHecho cuando: hay una tabla de errores y latencia por idioma y ajuste en el README del prototipo, y una recomendación clara de modelo por idioma."
+      "desc": "Comprobar con grabaciones tuyas (no voz sintética), de varios minutos y en los dos idiomas, que el ajuste rápido no empeora la precisión, y comparar inglés con Parakeet Unified English.\n\nHecho cuando: hay una tabla de errores y latencia por idioma y ajuste en el README del prototipo, y una recomendación clara de modelo por idioma.",
+      "notes": [
+        {
+          "at": "2026-11-08T17:07:30Z",
+          "by": "claude-code",
+          "text": "Plan: grabaciones tuyas de varios minutos en español e inglés; pasarlas por la transcripción con el ajuste rápido (R=3) y el normal (R=13), y en inglés también con Parakeet Unified English; tabla de errores (WER) y latencia por idioma y ajuste en el README del prototipo, con recomendación de modelo por idioma."
+        },
+        {
+          "at": "2026-11-08T17:08:05Z",
+          "by": "claude-code",
+          "text": "Question: Necesito dos grabaciones tuyas leyendo en voz alta tools/microprompt-captions/lecturas/es.txt y en.txt (unos 2-3 min cada una) con el micro Astro A50. Comando en el chat."
+        },
+        {
+          "at": "2026-11-08T17:08:49Z",
+          "by": "claude-code",
+          "text": "Pausado a petición tuya, sin grabaciones todavía."
+        },
+        {
+          "at": "2026-11-08T17:08:54Z",
+          "by": "claude-code",
+          "text": "Para retomar: faltan tus dos grabaciones leyendo tools/microprompt-captions/lecturas/es.txt y en.txt (2-3 min cada una, micro Astro A50). Los textos ya están preparados, sin commit. Después: medir Nemotron R=3 y R=13 en los dos idiomas y Parakeet Unified English en inglés; tabla de errores y latencia en el README y recomendación de modelo por idioma."
+        },
+        {
+          "at": "2026-11-09T12:45:14Z",
+          "by": "claude-code",
+          "text": "Sigue sin empezar: necesita tus dos grabaciones leyendo lecturas/es.txt y en.txt; un agente no puede hacerlas."
+        }
+      ]
     },
     {
       "id": "RE-01",
       "title": "Audio de Windows como fuente",
-      "state": "todo",
+      "state": "done",
       "group": "RE",
       "deps": ["SU-02"],
       "at": "2026-11-07T10:47:42Z",
       "by": "claude-code",
-      "desc": "Al empezar una sesión eliges qué subtitular: micrófono, audio del sistema (lo que suena por los altavoces: llamadas, vídeos) o ambos. Reutiliza la captura WASAPI que Hex ya usa en reuniones.\n\nHecho cuando: un vídeo de YouTube se subtitula con \"audio del sistema\" y la elección se recuerda para la próxima vez."
+      "desc": "Al empezar una sesión eliges qué subtitular: micrófono, audio del sistema (lo que suena por los altavoces: llamadas, vídeos) o ambos. Reutiliza la captura WASAPI que Hex ya usa en reuniones.\n\nHecho cuando: un vídeo de YouTube se subtitula con \"audio del sistema\" y la elección se recuerda para la próxima vez.",
+      "notes": [
+        {
+          "at": "2026-11-09T12:45:13Z",
+          "by": "claude-code",
+          "text": "Plan: agente en paralelo (rama propia en worktree). Fuente micrófono / audio del sistema / ambos, reutilizando la captura WASAPI de reuniones; la elección se guarda."
+        },
+        {
+          "at": "2026-11-09T13:02:22Z",
+          "by": "claude-code",
+          "text": "En el panel Teleprompter, junto a \"Start session\", eliges Micrófono / Audio del sistema / Ambos, y la elección se recuerda (ajuste `labs.teleprompter_source`, micrófono por defecto). Está en la rama `worktree-agent-acbc8a342e7ed387c` (5e0d0baa), todavía sin unir a main.\n- Probado en este PC con la voz sintética de Windows sonando por los altavoces: en \"Audio del sistema\" sale texto en 1 s, con algunos errores.\n- En \"Ambos\" se mezclan las dos fuentes sin separar quién habla (eso es RE-02) y se perdieron palabras; seguramente por la voz sintética, sin confirmar.\n- Para comprobar a mano: subtitula un vídeo de YouTube con \"Audio del sistema\", cierra y vuelve a abrir MicroPrompt y mira que sigue elegido; prueba \"Ambos\" con tu voz mientras suena un vídeo.\n- Cambiar la fuente con la sesión en marcha no le afecta: vale para la siguiente."
+        }
+      ]
     },
     {
       "id": "RE-02",
       "title": "Yo / Los demás",
-      "state": "todo",
+      "state": "done",
       "group": "RE",
       "deps": ["RE-01"],
       "at": "2026-11-07T10:47:42Z",
       "by": "claude-code",
-      "desc": "Con micrófono y audio del sistema a la vez, cada frase sale etiquetada \"Yo\" o \"Los demás\" según de dónde venga, y lo que suena por tus altavoces y se cuela en el micrófono no sale repetido como tuyo (Hex ya tiene esa lógica de eco para reuniones).\n\nRiesgo: hoy sólo puede haber un stream a la vez; harán falta dos (uno por fuente) sobre el mismo modelo.\n\nHecho cuando: en una llamada real con altavoces, tus frases salen como \"Yo\", las del otro como \"Los demás\", sin duplicados."
+      "desc": "Con micrófono y audio del sistema a la vez, cada frase sale etiquetada \"Yo\" o \"Los demás\" según de dónde venga, y lo que suena por tus altavoces y se cuela en el micrófono no sale repetido como tuyo (Hex ya tiene esa lógica de eco para reuniones).\n\nRiesgo: hoy sólo puede haber un stream a la vez; harán falta dos (uno por fuente) sobre el mismo modelo.\n\nHecho cuando: en una llamada real con altavoces, tus frases salen como \"Yo\", las del otro como \"Los demás\", sin duplicados.",
+      "notes": [
+        {
+          "at": "2026-11-09T19:40:23Z",
+          "by": "claude-code",
+          "text": "Plan: sobre la rama prueba/su05-re01-gu01 (donde están RE-01 y GU-01). El motor sólo admite un stream en vivo, así que en «Ambos» alterno las fuentes en uno solo: mientras suena el audio del sistema se transcribe ése (y se descarta el micro, con lo que el eco de los altavoces no se repite); si no, el micro. Cada cambio de turno cierra la frase y la etiqueta «Yo» / «Los demás»."
+        },
+        {
+          "at": "2026-11-09T19:56:24Z",
+          "by": "claude-code",
+          "text": "Con la fuente «Ambos», cada frase sale bajo «Yo» o «Los demás», y lo que suena por los altavoces no se repite como tuyo. También queda así en el historial y en el .txt/.srt. Está en la rama `prueba/su05-re01-gu01` (commit 35320cb8), sin unir a main ni subir.\n\n**Cambio respecto al plan:** no hay dos transcripciones a la vez, porque el motor sólo admite una en vivo. Las dos fuentes se turnan en una sola: mientras suena el audio del sistema se transcribe ése y el micrófono se ignora; cuando calla, vuelve el micrófono. Consecuencias que debes aceptar o devolver:\n- Lo que digas **mientras habla el otro** no se subtitula.\n- Si respondes en menos de un cuarto de segundo tras su última palabra, puedes perder el principio de tu frase.\n- Con música o un vídeo sonando de fondo todo el rato, tu voz no sale.\n- Tu voz llega 0,25 s más tarde que antes en «Ambos».\n\n**Comprobado:** en este PC, con una copia aparte de la app (sin tocar tu MicroPrompt), un micrófono simulado con una grabación y una voz sonando por la salida: las frases salieron con su etiqueta y cortadas en cada cambio de turno. En esa prueba se coló el audio que tenías puesto en ese momento, como «Los demás»; es lo esperado.\n\n**Sin comprobar:** una llamada real con altavoces. Tu micrófono es de auriculares (Astro A50), así que aquí no hay eco que medir; la parte del eco sólo tiene test automático.\n\n**Para probarlo:** cierra MicroPrompt, compila esa rama, elige «Ambos» y habla con alguien por videollamada. Mira que tus frases salen como «Yo», las suyas como «Los demás», y cuánto molesta perder lo que dices encima.\n\nCaptura de cómo se ve: `C:\\Users\\ik3ru\\AppData\\Local\\Temp\\claude\\c13e51b363a4c8f5\\f2d988b7-fc30-4a03-aa81-6fb836817f87\\scratchpad\\speakers-dark.png`"
+        }
+      ]
     },
     {
       "id": "GU-01",
       "title": "Abrir un guion",
-      "state": "todo",
+      "state": "done",
       "group": "GU",
       "deps": ["SU-02"],
       "at": "2026-11-07T10:47:42Z",
       "by": "claude-code",
-      "desc": "En la ventana abres un fichero .txt o .md y se muestra como guion, en letra grande, listo para leer.\n\nHecho cuando: abres un guion de varias páginas, se ve entero con scroll y el formato de Markdown básico no estorba (títulos y listas se leen bien)."
+      "desc": "En la ventana abres un fichero .txt o .md y se muestra como guion, en letra grande, listo para leer.\n\nHecho cuando: abres un guion de varias páginas, se ve entero con scroll y el formato de Markdown básico no estorba (títulos y listas se leen bien).",
+      "notes": [
+        {
+          "at": "2026-11-09T12:45:14Z",
+          "by": "claude-code",
+          "text": "Plan: agente en paralelo (rama propia en worktree). Abrir .txt/.md y mostrarlo como guion en letra grande con scroll."
+        },
+        {
+          "at": "2026-11-09T13:02:45Z",
+          "by": "claude-code",
+          "text": "En el panel Teleprompter, «Open script…» abre un .txt o .md y lo muestra en letra grande con scroll; títulos y listas se leen limpios, sin `#` ni `*`. «Close script» vuelve a los subtítulos. Está en la rama `worktree-agent-a510391a2983c5234` (e96ee852), todavía sin unir a main.\n- Verificado con tests de la limpieza de Markdown y capturas de un guion de varias páginas en claro y oscuro (scratchpad/teleprompter-script-*.png). No se probó en la app real.\n- Para comprobar a mano: abre un guion tuyo con el diálogo, mira que el scroll con la rueda funciona y que un .txt guardado con el Bloc de notas antiguo (ANSI) no sale con «�» en las tildes.\n- Por defecto: mientras hay un guion abierto se ocultan los subtítulos en vivo (GU-02 los combinará), y el guion no se recuerda al reiniciar."
+        }
+      ]
     },
     {
       "id": "GU-02",
       "title": "El guion sigue tu lectura",
       "state": "todo",
       "group": "GU",
-      "deps": ["GU-01"],
+      "deps": ["GU-01", "GU-04"],
       "at": "2026-11-07T10:47:42Z",
       "by": "claude-code",
       "desc": "Mientras lees en voz alta, MicroPrompt reconoce por dónde vas, marca lo ya leído y desplaza el guion solo para que la línea actual quede siempre a la vista.\n\nHecho cuando: lees un guion de 2-3 minutos a tu ritmo, con algún error de lectura, y el guion no se adelanta ni se pierde."
@@ -244,6 +351,474 @@
           "at": "2026-11-07T21:58:17Z",
           "by": "claude-code",
           "text": "MicroPrompt ya es tu Hex de diario: está instalado, arranca con Windows y usa tus ajustes, historial y modelos de siempre. Falta que tú reinicies y lo compruebes.\n\n- Instalado en %LOCALAPPDATA%\\Programs\\MicroPrompt\\hex.exe (build release, local: nunca se actualiza solo; el log lo confirma). Hay un acceso \"MicroPrompt\" en el menú Inicio.\n- La entrada \"Hex\" del arranque de Windows apunta ya al fork (antes al oficial).\n- Usa %APPDATA%\\hex como el oficial: tus 32 dictados siguen en el Historial, el modelo es Nemotron (es), el listener está activo y el Lab Teleprompter, encendido. Una sesión rápida del teleprompter arrancó y paró bien.\n- Para repetirlo tras cambios: compilar en release con HEX_LOCAL_BUILD=1 y ejecutar scripts\\install-microprompt.ps1 (sin commitear).\n\nQué comprobar tú:\n1. Reinicia el PC: debe arrancar solo (icono en la bandeja).\n2. Dicta con Ctrl+Space en cualquier app.\n3. Abre la ventana → Teleprompter → Empezar sesión.\n4. Después, si quieres, desinstala el Hex oficial (Configuración › Aplicaciones): su desinstalador conserva tus datos y no toca la entrada de inicio del fork.\n\nOjo: si vuelves al Hex oficial tras guardar sesiones del teleprompter, no leerá el historial (lo aparta como copia y empieza vacío)."
+        }
+      ]
+    },
+    {
+      "id": "EN-01",
+      "title": "Prototipo del apuntador de entrevistas",
+      "state": "done",
+      "group": "EN",
+      "at": "2026-11-08T13:42:23Z",
+      "by": "claude-code",
+      "desc": "Antes de tocar la app, comprobar con un script y la página web del prototipo que un LLM local sirve: le das tu guion de ejemplo (Markdown: Sobre mí, Historias, Preguntas previstas, Preguntas que haré) más tu CV, la oferta y notas de la empresa, y una entrevista simulada (preguntas grabadas sonando como audio del sistema).\n\nMide, con 2 o 3 modelos locales de Ollama que quepan junto a la transcripción en la GPU de 16 GB: cuánto tarda la ayuda desde que acaba la pregunta (objetivo ≤ 4 s) y si los 3 puntos clave te sirven, en unas 10 preguntas previstas e imprevistas.\n\nHecho cuando: hay una tabla modelo × tiempo × tu valoración, una plantilla de guion para que escribas el tuyo, y una recomendación de modelo.",
+      "notes": [
+        {
+          "at": "2026-11-08T13:57:57Z",
+          "by": "claude-code-en01",
+          "text": "Plan: prototipo en tools/microprompt-interview/ con plantilla de guion, ejemplo inventado (CV, oferta, empresa) y entrevista simulada en español pasada por la transcripción real; comparar 2-3 modelos locales de Ollama (tiempo hasta la tarjeta, memoria de GPU) y dejar las respuestas para que las valores."
+        },
+        {
+          "at": "2026-11-08T14:00:18Z",
+          "by": "claude-code-en01",
+          "text": "Primera prueba con la transcripción real: la entrevista simulada (voz Helena de Windows) pasa por un Hex propio de pruebas, sin tocar el tuyo. Nemotron a menudo no escribe los signos de interrogación, así que el apuntador reconoce las preguntas también por cómo empiezan («me haces…», «cómo…», «tienes…»). 9 de 10 preguntas detectadas; la que falla es por un error de transcripción («Quería si…» en vez de «Qué harías si…»). Ahora comparo 3 modelos (qwen3.5 4B y 9B, gemma4 12B)."
+        },
+        {
+          "at": "2026-11-08T14:32:06Z",
+          "by": "claude-code-en01",
+          "text": "El apuntador de entrevistas funciona en local y es rápido. La tarjeta con 3 puntos sale **1,2 s después de que el entrevistador acabe la pregunta** (objetivo: 4 s), contando la transcripción. Si la pregunta está en tu guion, salen tus propios puntos a los 0,65 s.\n\n**Modelo recomendado: gemma4:12b.** Da los puntos más cortos y fáciles de leer, se ciñe a tu guion y marca bien lo que añade por su cuenta. Usa 8,6 GB de la tarjeta gráfica. Si la videollamada necesita la GPU, qwen3.5:9b es casi igual de bueno con 6,3 GB. Los tres modelos probados tardan lo mismo, así que lo que decide es la calidad.\n\nProbado con una entrevista simulada en español (voz de Windows) pasada por la transcripción real de MicroPrompt. Se usó una copia aparte, sin tocar tu MicroPrompt diario.\n- Salió tarjeta en 9 de 10 preguntas; tras la revisión, en 10 de 10. Las frases que no son preguntas (\"Vale, perfecto\") no sacaron ninguna.\n- Las 6 preguntas de tu guion se reconocieron aunque se dijeron con otras palabras.\n\nLo que tienes que hacer:\n1. **Puntúa las respuestas** de los tres modelos (columna \"Tu nota (1–5)\") en `tools/microprompt-interview/README.md`, apartado \"Las respuestas, para que las puntúes\". Tu nota decide el modelo.\n2. **Escribe tu guion** a partir de `tools/microprompt-interview/plantilla-guion.md`. Las instrucciones están dentro, y en `ejemplo/` tienes uno completo.\n\nPara la app (EN-03) conviene hablar con Ollama directamente y no a través de OpenCode. Otra señal útil para saber que una pregunta ha terminado: que empieces a hablar tú. La transcripción a menudo no pone los \"¿?\", y un error de transcripción puede hacer perder una pregunta.\n\nPR (sin fusionar): https://github.com/ik3rurru/MicroPrompt/pull/2. Ya tiene una revisión independiente y sus 11 hallazgos están corregidos. La comprobación de macOS falla por algo que ya fallaba en `main` y que este PR no toca."
+        },
+        {
+          "at": "2026-11-08T14:34:57Z",
+          "by": "human",
+          "text": "Sent back: error: could not compile `hex` (bin \"hex\") due to 1 previous error\nError: Process completed with exit code 101."
+        },
+        {
+          "at": "2026-11-08T14:35:44Z",
+          "by": "claude-code",
+          "text": "Arreglando el fallo de CI en macOS: es el mismo aviso de 'poll' ya resuelto en CA-02; lo traigo a este PR."
+        },
+        {
+          "at": "2026-11-08T14:40:41Z",
+          "by": "claude-code",
+          "text": "CI en verde en Linux, macOS y Windows (PR #2). El fallo era el mismo aviso de compilación de macOS que tenía CA-02 (una función de la ventana de subtítulos que macOS no usa); he traído el mismo arreglo a este PR, así que no habrá conflicto al fusionar los dos. El resto de EN-01 no cambia: puntúa las respuestas en tools/microprompt-interview/README.md y escribe tu guion desde plantilla-guion.md."
+        }
+      ]
+    },
+    {
+      "id": "EN-02",
+      "title": "Preparar la entrevista en la ventana",
+      "state": "done",
+      "group": "EN",
+      "deps": ["GU-01"],
+      "at": "2026-11-08T13:42:23Z",
+      "by": "claude-code",
+      "desc": "En la ventana de MicroPrompt eliges tu guion de entrevista (.md) y, opcionalmente, tu CV, la oferta y notas de la empresa. El guion se ve ordenado por secciones: tu presentación en ideas, tus historias y las preguntas que quieres hacer tú al final, que puedes ir tachando.\n\nVa en Labs, apagado por defecto. Nada sale del equipo.\n\nHecho cuando: cargas tu guion real y se lee bien de un vistazo durante una llamada.",
+      "notes": [
+        {
+          "at": "2026-11-09T19:40:23Z",
+          "by": "claude-code",
+          "text": "Plan: después de RE-02, en la misma rama y en commit aparte, sin tocar los mismos ficheros salvo las traducciones. Lab nuevo «Entrevista»: en el panel Teleprompter abres el guion de entrevista y, opcionales, CV, oferta y notas; el guion se ve por secciones y las «Preguntas que haré» se tachan al pulsarlas."
+        },
+        {
+          "at": "2026-11-09T19:56:25Z",
+          "by": "claude-code",
+          "text": "Con el Lab nuevo «Interview prep» encendido (Labs, apagado por defecto), «Abrir guion…» en el panel Teleprompter muestra tu guion de entrevista por secciones: una fila con los títulos de tus `##` (Sobre mí, Historias y proyectos, Preguntas previstas, Preguntas que haré) y debajo sólo la sección elegida, en letra grande. En «Preguntas que haré» cada pregunta tiene una casilla: al pulsarla queda tachada. Está en la rama `prueba/su05-re01-gu01` (commit 56ec253a), sin unir a main ni subir.\n\n- **CV, oferta y notas:** tres botones bajo las secciones. Si en la carpeta del guion hay `cv`, `oferta` (u `offer`) y `empresa` (o `company`) en .md o .txt, se cargan solos al abrir el guion; si no, los eliges con el botón. De momento sólo se guardan en memoria para EN-03; no se muestran.\n- **Nada sale del equipo:** sólo lee esos ficheros; no guarda ni envía nada.\n- **No se recuerda:** al cerrar el guion o la app se pierden las preguntas tachadas y hay que volver a abrirlo.\n- La sección de preguntas se reconoce por su título («Preguntas que haré», o «… to ask» en inglés).\n\n**Comprobado:** tests de las secciones, el tachado y la carga de documentos, y dos capturas con el guion de ejemplo. **Sin comprobar:** el diálogo de abrir fichero y los clics en la app real.\n\n**Para probarlo:** cierra MicroPrompt, compila esa rama, enciende Labs › Interview prep, abre tu guion real y mira si cada sección se lee de un vistazo y si tachar funciona.\n\nDos cosas que verás y que ya estaban antes de esta tarea: el título «Teleprompter» de la cabecera se queda en «…» porque los botones no caben, y la tarjeta del atajo sigue ocupando sitio encima del guion. Dime si las arreglo aparte.\n\nCapturas:\n- `C:\\Users\\ik3ru\\AppData\\Local\\Temp\\claude\\c13e51b363a4c8f5\\f2d988b7-fc30-4a03-aa81-6fb836817f87\\scratchpad\\teleprompter-interview.png`\n- `C:\\Users\\ik3ru\\AppData\\Local\\Temp\\claude\\c13e51b363a4c8f5\\f2d988b7-fc30-4a03-aa81-6fb836817f87\\scratchpad\\teleprompter-interview-stories.png`"
+        }
+      ]
+    },
+    {
+      "id": "EN-03",
+      "title": "Ayuda ante las preguntas del entrevistador",
+      "state": "done",
+      "group": "EN",
+      "deps": ["EN-01", "EN-02", "RE-02", "AS-01"],
+      "at": "2026-11-08T13:42:23Z",
+      "by": "claude-code",
+      "desc": "En una videollamada, cuando el entrevistador termina una pregunta (lo que suena por los altavoces), aparece en la misma ventana una tarjeta con la pregunta y 3 puntos clave para responder, en 4 s o menos. Si la pregunta está en tus Preguntas previstas, salen tus propios puntos; si no, el LLM local los propone con tu guion, CV y oferta, y puede añadir conocimiento general marcado como sugerencia.\n\nHecho cuando: en una entrevista simulada por videollamada, las preguntas previstas muestran tus puntos y las imprevistas una ayuda útil, sin que se cuelen tus propias frases como preguntas.",
+      "notes": [
+        {
+          "at": "2026-11-11T07:47:55Z",
+          "by": "claude-code",
+          "text": "Ahora espera también a AS-01 (Modelo local conectado): la conexión con Ollama se hace una vez allí y la tarjeta automática la reutiliza. Plan completo en docs/plans/asistente.md."
+        },
+        {
+          "at": "2026-11-11T09:34:03Z",
+          "by": "claude-code",
+          "text": "Plan: portar las reglas del prototipo EN-01 (detectar preguntas sin «?», reconocer las Preguntas previstas aunque se digan con otras palabras) a src/teleprompter/hints.rs; cada vez que se cierra una frase de «Los demás», si su turno es una pregunta sale un Apunte en el hilo: tus puntos del guion o 3 del modelo local. Rama feat/en-03-interview-hints encima de SU-06."
+        },
+        {
+          "at": "2026-11-11T09:34:03Z",
+          "by": "claude-code",
+          "text": "Cuando el entrevistador termina una pregunta, aparece sola en el hilo una tarjeta **Hint** (Apunte) con 3 puntos para responder. Si la pregunta está en tu guion, salen tus puntos al instante; si no, los del modelo local, que tarda 0,44 s con el modelo cargado (0,17 s hasta el primer punto). El objetivo eran 4 s.\n\n**Cómo funciona** (con Labs › Interview prep encendido y un guion abierto):\n- **Qué escucha:** sólo a «Los demás». Tus frases nunca disparan una tarjeta. Con «Audio del sistema» como única fuente, todo lo que se oye cuenta como del otro.\n- **Cuándo salta:** cuando el turno del entrevistador se convierte en pregunta, ya sea con «?» o por cómo empieza («Cuéntame…», «me haces…», «Cómo diseñarías…»), porque Nemotron a menudo no pone los signos. Sale una tarjeta por turno: el turno acaba cuando hablas tú o tras 5 s de silencio suyo.\n- **De tu guion:** si la pregunta encaja con una de tus «## Preguntas previstas», aunque la diga con otras palabras (usa las variantes de «También:»), la tarjeta dice «De tu guion: <tu pregunta>» y muestra tus 3 viñetas. «¿Tienes alguna pregunta para nosotros?» saca tus «Preguntas que haré».\n- **Del modelo:** si no encaja y tienes Labs › Assistant encendido, el modelo da 3 ideas cortas con tu guion, CV y oferta, y marca «(sugerencia)» lo que no sale de ellos. Si el Assistant está apagado, sólo salen las del guion.\n- Puedes seguir usando Suggest y Answer a la vez: la tarjeta automática no las bloquea.\n\n**Comprobado:** las reglas son las del prototipo EN-01, con sus mismos casos de prueba (11 frases que son preguntas y 11 que no, preguntas del guion dichas de otra forma, «¿Tienes alguna experiencia con Kafka?» que no confunde con la pregunta final), más tests de los turnos. Con tu Ollama, «¿cómo invertirías una lista enlazada?» dio 3 ideas en español con «(sugerencia)». Captura: C:\\Users\\ik3ru\\AppData\\Local\\Temp\\claude\\c13e51b363a4c8f5\\b82bc850-222c-48df-b4a2-4716daa86fad\\scratchpad\\en03-light.png\n\n**Sin comprobar:** una entrevista simulada por videollamada, que es el «hecho cuando» de la tarea. No lo puedo hacer yo sin poner audio por tus altavoces.\n\n**Para probarlo:** enciende Labs › Interview prep y Assistant, abre tu guion (con CV y oferta al lado) y empieza una sesión con «Ambos». Pon un vídeo de una entrevista en español, o que alguien te haga preguntas de tu guion con otras palabras y alguna imprevista. Mira que salen tarjetas sólo para sus preguntas y que las previstas traen tus puntos.\n\n**Dónde está:** rama `feat/en-03-interview-hints`, un commit encima de SU-06. Sin unir a main ni subir."
+        }
+      ]
+    },
+    {
+      "id": "EN-04",
+      "title": "Ideas dichas y «no olvides»",
+      "state": "todo",
+      "group": "EN",
+      "deps": ["EN-03"],
+      "at": "2026-11-08T13:42:23Z",
+      "by": "claude-code",
+      "desc": "Mientras respondes, MicroPrompt marca qué ideas de tu respuesta (o de tu presentación) ya has dicho. Si terminas o el entrevistador pasa a otra cosa y te dejaste una idea clave, se resalta para que la menciones. Las preguntas que querías hacer tú se tachan solas cuando las haces.\n\nHecho cuando: en una entrevista simulada, las ideas que dices se marcan solas y las que olvidas se resaltan a tiempo de decirlas."
+    },
+    {
+      "id": "GU-04",
+      "title": "Ver el Markdown formateado",
+      "state": "done",
+      "group": "GU",
+      "deps": ["GU-01"],
+      "at": "2026-11-09T14:04:35Z",
+      "by": "claude-code",
+      "desc": "Al abrir un .md, el guion se ve como en un lector de Markdown en vez de como texto limpio: negrita y cursiva se ven como tales, los títulos tienen tamaños distintos según su nivel, las citas se ven sangradas, los bloques de código en letra monoespaciada y las listas anidadas con su sangría. Los enlaces se leen como texto (no hace falta abrirlos) y las tablas, si las hay, se ven como tabla.\n\nSigue en letra grande para leer en voz alta. Los .txt no cambian.\n\nHecho cuando: un .md con títulos de varios niveles, negrita, cursiva, listas anidadas, una cita, un bloque de código y una tabla se lee igual de bien que en un visor de Markdown, en claro y en oscuro.\n\nOjo: hoy GU-01 quita las marcas a mano. Para interpretar Markdown de verdad lo sensato es usar `pulldown-cmark` (biblioteca estándar en Rust, pequeña), que sería una dependencia nueva. GU-02 (el guion sigue tu lectura) esperará a esta tarea para trabajar ya sobre el guion formateado.",
+      "notes": [
+        {
+          "at": "2026-11-09T14:06:18Z",
+          "by": "claude-code",
+          "text": "Plan: sobre la rama de prueba (con SU-05, RE-01 y GU-01 ya unidos). Interpretar el .md con pulldown-cmark y pintar títulos por nivel, negrita/cursiva, listas anidadas, citas, código y tablas en letra grande; los .txt siguen igual."
+        },
+        {
+          "at": "2026-11-09T14:10:27Z",
+          "by": "claude-code",
+          "text": "Un .md abierto con «Open script…» se ve formateado como en un lector de Markdown, en letra grande: títulos por nivel, negrita y cursiva, listas anidadas, citas, código y tablas. Los .txt siguen igual. Está en la rama de prueba `prueba/su05-re01-gu01` (3f54fb84), con las otras tres tareas, sin unir a main.\n- No ha hecho falta biblioteca nueva propia: rune-kit (la librería de interfaz que ya usa la app) trae un visor de Markdown y solo lo he activado. Sustituye la limpieza a mano de GU-01, así que hay menos código.\n- Verificado: tests en verde y captura de un guion con todo lo anterior (scratchpad/gu04-tall.png).\n- MicroPrompt de prueba ya está abierto con esta versión: abre un .md tuyo y mira que se lee bien.\n- Aparte: con los cuatro controles de la cabecera el título del panel queda cortado en «…» (viene de juntar SU-05, RE-01 y GU-01)."
+        },
+        {
+          "at": "2026-11-09T15:04:37Z",
+          "by": "human",
+          "text": "Sent back: Hay que revisar el formateo del md para una visualización efectiva para el usuario"
+        },
+        {
+          "at": "2026-11-09T15:05:08Z",
+          "by": "claude-code",
+          "text": "Retomo por la devolución: revisar el formato del .md para que se lea bien. Primero concreto contigo qué se ve mal."
+        },
+        {
+          "at": "2026-11-09T15:05:08Z",
+          "by": "claude-code",
+          "text": "Question: ¿Qué se veía mal al abrir tu .md: líneas demasiado largas, poco espacio entre bloques, títulos, listas, tablas o código?"
+        },
+        {
+          "at": "2026-11-09T15:11:53Z",
+          "by": "claude-code",
+          "text": "Respuesta: líneas muy largas, poco aire entre bloques, letra/contraste, algo no se interpreta y la visualización de las tablas."
+        },
+        {
+          "at": "2026-11-09T15:19:06Z",
+          "by": "claude-code",
+          "text": "El .md se lee mejor de lejos: columna centrada de unos 60 caracteres por línea, más aire entre bloques y más aún antes de cada título, letra más grande (cuerpo 32 px, títulos 48/40/35), negrita más marcada, y citas y tablas con líneas visibles y celdas más holgadas. En la rama de prueba (dca94d83), sin unir a main.\n- MicroPrompt de prueba ya está abierto con esta versión: abre tu .md y comprueba que se lee bien.\n- «Algo no se interpreta»: no sé qué elemento era. Si sigue saliendo algo como texto crudo, dime cuál (notas al pie, HTML, emojis…).\n- Capturas: scratchpad/gu04b-tall.png (oscuro) y gu04c-light.png (claro).\n- De paso, el título del panel ya no sale cortado en «…»."
+        },
+        {
+          "at": "2026-11-09T15:19:11Z",
+          "by": "claude-code",
+          "text": "Corrección: el título del panel solo se ve entero con la ventana ancha (1400 px); a 1000 px sigue cortado en «…». No lo he arreglado en esta tarea."
+        }
+      ]
+    },
+    {
+      "id": "AS-01",
+      "title": "Modelo local conectado",
+      "state": "done",
+      "group": "AS",
+      "at": "2026-11-11T07:47:50Z",
+      "by": "claude-code",
+      "desc": "MicroPrompt habla directamente con Ollama en tu equipo (nada sale de él). En Labs eliges el modelo de entre los que tienes (gemma4:12b por defecto, como recomendó EN-01) y la ventana dice si Ollama está en marcha. Las respuestas llegan palabra a palabra. Es la base de todo el grupo y también de EN-03.\n\nHecho cuando: con Ollama abierto, una pregunta de prueba desde la ventana se responde en streaming; con Ollama cerrado, la ventana dice «Ollama no está en marcha» sin bloquear los subtítulos.",
+      "notes": [
+        {
+          "at": "2026-11-11T07:52:00Z",
+          "by": "claude-code",
+          "text": "Plan: cliente de Ollama propio (HTTP de bucle local, como el de OpenCode), Lab «Assistant» apagado por defecto, en el panel Teleprompter elegir modelo entre los instalados (gemma4:12b por defecto), estado de Ollama y un botón «Probar» que responde en streaming. Rama nueva encima de prueba/su05-re01-gu01 (donde está el panel con EN-02/RE-02)."
+        },
+        {
+          "at": "2026-11-11T08:08:12Z",
+          "by": "claude-code",
+          "text": "MicroPrompt ya habla con tu Ollama. Con el Lab nuevo **Assistant** encendido (Labs, apagado por defecto), el panel Teleprompter muestra una tarjeta «Local model» con:\n- si Ollama está en marcha o «Ollama isn't running» (en rojo), con un botón «Check again» que vuelve a mirar cuando lo abras;\n- tus modelos instalados para elegir (gemma4:12b por defecto; la elección se guarda). Los modelos de la nube de Ollama (tu kimi-k3.1-pro:cloud) no salen: nada se va del equipo;\n- «Try it»: una pregunta de prueba cuya respuesta aparece palabra a palabra.\n\nSi Ollama está cerrado, los subtítulos siguen igual: la tarjeta sólo lo dice.\n\n**Comprobado:** contra tu Ollama real con gemma4:12b, la respuesta llega a trozos: el primero a los 6,5 s con el modelo sin cargar (la carga) y a los 0,05 s ya cargado. Hay tests con un Ollama simulado para la lista de modelos, el streaming y los errores, y capturas del panel con Ollama abierto y cerrado:\n- C:\\Users\\ik3ru\\AppData\\Local\\Temp\\claude\\c13e51b363a4c8f5\\b82bc850-222c-48df-b4a2-4716daa86fad\\scratchpad\\teleprompter-assistant-dark.png\n- C:\\Users\\ik3ru\\AppData\\Local\\Temp\\claude\\c13e51b363a4c8f5\\b82bc850-222c-48df-b4a2-4716daa86fad\\scratchpad\\teleprompter-assistant-off-light.png\n\n**Sin comprobar:** los clics en la app real.\n\n**Dónde está:** rama `feat/as-01-ollama` (3 commits encima de `prueba/su05-re01-gu01`, que tiene RE-02 y EN-02), sin unir a main ni subir.\n\n**Para probarlo:** cierra MicroPrompt, compila esa rama, enciende Labs › Assistant y abre Teleprompter. Pulsa «Try it» con Ollama abierto; después cierra Ollama, pulsa «Check again» y mira que lo dice sin molestar a una sesión de subtítulos.\n\nDos tests que ya fallaban en la rama de prueba (los idiomas recordados por modelo, de SU-05) siguen fallando; no son de esta tarea. De paso he añadido al Playground las escenas que faltaban (Yo/Los demás, entrevista)."
+        }
+      ]
+    },
+    {
+      "id": "AS-02",
+      "title": "Hilo de la sesión",
+      "state": "done",
+      "group": "AS",
+      "deps": ["RE-02"],
+      "at": "2026-11-11T07:47:50Z",
+      "by": "claude-code",
+      "desc": "Durante una sesión, la ventana muestra la conversación como un hilo: frases de «Yo» y «Los demás» (juntando las de una misma persona hasta una pausa), y más tarde capturas y respuestas de la IA. Cada mensaje tiene un interruptor «usar en la IA» para dejar fuera el ruido sin borrarlo. Lo copia de Open-Cluely.\n\nHecho cuando: en una llamada de prueba el hilo se lee bien de un vistazo y apagar un mensaje lo deja atenuado y fuera de lo que se envía a la IA.",
+      "notes": [
+        {
+          "at": "2026-11-11T08:15:23Z",
+          "by": "claude-code",
+          "text": "Plan: el hilo agrupa en mensajes las frases seguidas de una misma persona (cortando también tras una pausa larga), cada mensaje con un interruptor «usar en la IA»; la sesión guarda qué entra y da el texto listo para la IA (contexto acotado, lo más nuevo primero) que usarán AS-03 y AS-06. Rama feat/as-02-thread encima de AS-01."
+        },
+        {
+          "at": "2026-11-11T08:22:47Z",
+          "by": "claude-code",
+          "text": "La sesión del Teleprompter se ve ahora como un hilo de mensajes y puedes dejar cualquiera fuera de la IA.\n\n- **Mensajes:** las frases seguidas de una misma persona se juntan en un mensaje hasta que cambia el turno o hay una pausa de 2,5 s (como Open-Cluely). El nombre («Yo» / «Los demás») sale cuando cambia quien habla, y lo que se está oyendo todavía cierra el mensaje de esa persona, con las palabras provisionales atenuadas.\n- **Interruptor por mensaje:** con Labs › Assistant encendido, cada mensaje tiene un interruptor a la derecha. Apagado, el mensaje sale atenuado y no se manda a la IA. Con el Lab apagado no hay interruptores, sólo el hilo. Lo apagado dura hasta la siguiente sesión.\n- **Lo que leerá la IA:** los mensajes encendidos, con los más recientes primero hasta unas 3.000 palabras, incluidas las que aún se están oyendo. Es lo que usarán «Responder» y «Sugerir» (AS-03) y las notas (AS-06).\n- **«Try it» ha cambiado:** ahora pide un resumen en una frase de la conversación, sólo con los mensajes encendidos. Así puedes comprobar a mano que uno apagado no llega. Si aún no hay conversación, sigue pidiéndole que se presente.\n\n**Comprobado:** tests de cómo se agrupan los mensajes, las pausas, las palabras provisionales y el texto para la IA (incluido que un mensaje apagado no entra), más capturas en claro y oscuro:\n- C:\\Users\\ik3ru\\AppData\\Local\\Temp\\claude\\c13e51b363a4c8f5\\b82bc850-222c-48df-b4a2-4716daa86fad\\scratchpad\\teleprompter-thread-light.png\n- C:\\Users\\ik3ru\\AppData\\Local\\Temp\\claude\\c13e51b363a4c8f5\\b82bc850-222c-48df-b4a2-4716daa86fad\\scratchpad\\teleprompter-thread-dark.png\n\n**Sin comprobar:** los interruptores en la app real ni una llamada de verdad.\n\n**Dónde está:** rama `feat/as-02-thread`, un commit encima de AS-01 (`feat/as-01-ollama`). Sin unir a main ni subir.\n\n**Para probarlo:** compila esa rama, enciende Labs › Assistant y empieza una sesión con «Ambos» en una videollamada o con un vídeo de fondo. Mira si el hilo se lee bien de un vistazo. Apaga un mensaje, pulsa «Try it» y mira que el resumen no lo menciona.\n\n**Para que decidas:** el hilo agrupa las frases también con el Lab apagado, así que los subtítulos ahora van por párrafos en vez de una frase por línea. Si prefieres las líneas sueltas cuando no usas el asistente, dímelo."
+        }
+      ]
+    },
+    {
+      "id": "AS-03",
+      "title": "Responder y Sugerir",
+      "state": "done",
+      "group": "AS",
+      "deps": ["AS-01", "AS-02"],
+      "at": "2026-11-11T07:47:50Z",
+      "by": "claude-code",
+      "desc": "Dos botones, cada uno con atajo, que responden en el hilo:\n- **Sugerir**: con la conversación, 2-4 frases para decir ya, 3 ideas a las que agarrarte y las repreguntas probables.\n- **Responder**: con todo lo marcado (conversación, capturas, respuestas anteriores), qué entendió que se pregunta y la respuesta completa; en preguntas de código, solución, enfoque y complejidad.\n\nComo en Open-Cluely, el modelo clasifica la pregunta (código, diseño, experiencia/STAR, concepto, charla) y responde con el formato de cada tipo, corrigiendo errores de transcripción. Usa tu guion, CV y oferta si los cargaste (EN-02), y el idioma de la sesión.\n\nHecho cuando: en una entrevista simulada, Sugerir empieza a salir en 2 s o menos y Responder da una respuesta útil a una pregunta técnica y a una de experiencia.",
+      "notes": [
+        {
+          "at": "2026-11-11T08:57:18Z",
+          "by": "claude-code",
+          "text": "Plan: botones Sugerir y Responder en la tarjeta del asistente, respuestas en el hilo, prompts adaptados de Open-Cluely con guion/CV/oferta, atajos globales configurables (Windows) junto al del Teleprompter. Rama feat/as-03-answer-suggest encima de AS-02."
+        },
+        {
+          "at": "2026-11-11T08:57:18Z",
+          "by": "claude-code",
+          "text": "«Sugerir» y «Responder» ya funcionan con tu Ollama, y en local son rápidos: con el modelo cargado, la respuesta empieza a salir a los 0,15-0,27 s y termina en 1-1,3 s (el objetivo eran 2 s).\n\n**Qué verás** (con Labs › Assistant encendido):\n- **Botones:** la tarjeta «Local model» cambia «Try it» por **Suggest** y **Answer**. La respuesta aparece palabra a palabra dentro del hilo, justo después de lo que se había oído al pulsar, en un recuadro con su nombre y su interruptor «usar en la IA».\n- **Suggest:** qué decir ahora: «Di esto» (2-4 frases para decir en voz alta), «Ideas clave» y «Posibles repreguntas». Sólo lee la conversación.\n- **Answer:** primero «Entendido» (la pregunta en una frase). Después, el formato según el tipo de pregunta: código (solución + enfoque + complejidad), diseño de sistemas, experiencia (respuesta tipo STAR tomada de tus documentos), concepto o charla. También lee las respuestas anteriores.\n- **Contexto:** las dos usan tu guion abierto y, si los cargaste con Interview prep, tu CV, la oferta y las notas de la empresa. Responden en el idioma de la sesión. Lo que añaden de conocimiento general lo marcan como sugerencia.\n- **Atajos (Windows):** antes de empezar la sesión, la tarjeta de atajos tiene dos filas nuevas, Suggest y Answer, sin asignar por defecto. Funcionan desde cualquier app (por ejemplo, con Teams delante) y no pueden repetir una tecla de otro atajo.\n- **Más rápido:** al empezar la sesión se precarga el modelo, y Ollama lo mantiene cargado 30 min, así que la primera respuesta no espera a la carga.\n- Si pulsas mientras otra respuesta se está escribiendo, no pasa nada: va una cada vez.\n\n**Comprobado:** tests de los prompts, de las respuestas dentro del hilo, del texto que lee la IA y de cuándo se activan los atajos. Una prueba contra tu Ollama real con una mini entrevista: «Suggest» dio una frase para decir y 3 ideas; «Answer» dio el código de invertir una lista enlazada con su complejidad, todo en español. Capturas:\n- C:\\Users\\ik3ru\\AppData\\Local\\Temp\\claude\\c13e51b363a4c8f5\\b82bc850-222c-48df-b4a2-4716daa86fad\\scratchpad\\as03-dark.png\n- C:\\Users\\ik3ru\\AppData\\Local\\Temp\\claude\\c13e51b363a4c8f5\\b82bc850-222c-48df-b4a2-4716daa86fad\\scratchpad\\teleprompter-assistant-idle-light.png\n\n**Sin comprobar:** los botones y los atajos en la app real; los cambios en el código de Linux y macOS sólo los compila CI.\n\n**Dónde está:** rama `feat/as-03-answer-suggest`, un commit encima de AS-02. Sin unir a main ni subir.\n\n**Para probarlo:** abre la versión release de esta rama, asigna un atajo a Suggest y otro a Answer, empieza una sesión con «Ambos» y pon un vídeo de entrevista (o que alguien te pregunte). Pulsa los atajos con otra app delante y mira el hilo."
+        }
+      ]
+    },
+    {
+      "id": "AS-04",
+      "title": "Preguntar por escrito",
+      "state": "done",
+      "group": "AS",
+      "deps": ["AS-03"],
+      "at": "2026-11-11T07:47:50Z",
+      "by": "claude-code",
+      "desc": "Una caja de texto bajo el hilo para escribirle a la IA (aclarar, pedir un ejemplo, «más corto»). Recuerda las últimas respuestas, así que puedes repreguntar sobre lo anterior.\n\nHecho cuando: tras una respuesta de Responder, escribes «dame un ejemplo» y responde sobre esa misma pregunta.",
+      "notes": [
+        {
+          "at": "2026-11-12T08:08:20Z",
+          "by": "claude-code",
+          "text": "Plan: caja de texto bajo el hilo (Enter o Preguntar) que manda tu pregunta a la IA con la conversación, tus preguntas escritas y sus respuestas anteriores, para repreguntar. Rama feat/as-04-06-ask-notes encima de EN-03."
+        },
+        {
+          "at": "2026-11-12T08:18:58Z",
+          "by": "claude-code",
+          "text": "Ya puedes escribirle a la IA. Con Labs › Assistant encendido, bajo el hilo del Teleprompter hay una caja «Ask the AI…» con un botón **Ask** (también vale Enter).\n\n- **Repreguntar:** la IA lee la conversación, sus respuestas anteriores y lo que le escribiste antes, así que «dame un ejemplo», «más corto» o «¿por qué?» van sobre su última respuesta.\n- **En el hilo:** la respuesta sale como las demás, con tu texto entre comillas encima y su interruptor «usar en la IA».\n- Si otra respuesta se está escribiendo todavía, lo que tecleaste se queda en la caja; vuelve a pulsar cuando acabe.\n\n**Comprobado** contra tu Ollama (gemma4:12b): tras una respuesta sobre proceso frente a hilo, «dame un ejemplo» dio un ejemplo de eso mismo (el navegador y sus pestañas). Tests del prompt y de lo que lee la IA. Captura: C:\\Users\\ik3ru\\AppData\\Local\\Temp\\claude\\c13e51b363a4c8f5\\1b4198e0-b46b-41f7-9420-eebebf6081b4\\scratchpad\\teleprompter-assistant.png\n\n**Sin comprobar:** escribir y pulsar en la app real.\n\n**Dónde está:** rama `feat/as-04-06-ask-notes` (un commit encima de EN-03, junto con AS-06), en el worktree `.claude/worktrees/prueba`. Sin unir a main ni subir.\n\n**Para probarlo:** abre esa versión, pulsa Answer tras una pregunta y escribe «dame un ejemplo»."
+        }
+      ]
+    },
+    {
+      "id": "AS-05",
+      "title": "La IA ve tu pantalla",
+      "state": "proposed",
+      "group": "AS",
+      "deps": ["AS-03"],
+      "at": "2026-11-11T07:47:50Z",
+      "by": "claude-code",
+      "desc": "Con un atajo, MicroPrompt captura la pantalla (sin su propia ventana) y la añade al hilo como miniatura. El botón **Ver pantalla** se la pasa al modelo, que la lee entera (enunciado, error, diagrama) y responde: en código, la solución completa. Responder también la usa si está marcada. gemma4:12b y qwen3.5:9b ya ven imágenes, así que no hace falta OCR. Las capturas no se guardan al terminar.\n\nHecho cuando: un problema de programación abierto en el navegador se resuelve desde la captura, y sabemos cuánto tarda y cuánta memoria de la GPU usa junto a los subtítulos."
+    },
+    {
+      "id": "AS-06",
+      "title": "Notas al terminar",
+      "state": "done",
+      "group": "AS",
+      "deps": ["AS-01", "AS-02"],
+      "at": "2026-11-11T07:47:50Z",
+      "by": "claude-code",
+      "desc": "Al terminar (o cuando quieras), **Notas** resume la sesión en 5 apartados fijos: temas, decisiones, tareas (con responsable y fecha si se dijeron), dudas abiertas y siguientes pasos. **Ideas** añade puntos fuertes, carencias y recomendaciones; tras una entrevista, cómo te fue. Se guardan con la sesión en el historial, junto al .txt y el .srt.\n\nHecho cuando: tras una reunión de prueba de 10 minutos, las notas recogen lo que se dijo sin inventar y están en el historial.",
+      "notes": [
+        {
+          "at": "2026-11-12T08:08:21Z",
+          "by": "claude-code",
+          "text": "Plan: botones Notas e Ideas en la tarjeta del asistente (durante o después de la sesión); al terminar, las últimas Notas/Ideas se guardan en la entrada de esa sesión en el historial, que las muestra y las guarda como .md junto al .txt/.srt. Misma rama que AS-04."
+        },
+        {
+          "at": "2026-11-12T08:18:58Z",
+          "by": "claude-code",
+          "text": "La tarjeta del asistente tiene dos botones más, **Notes** e **Insights** (Notas e Ideas en español), que puedes pulsar durante la sesión o después de pararla.\n\n- **Notes:** temas, decisiones, tareas (responsable y fecha sólo si se dijeron), dudas abiertas y siguientes pasos. Sólo con lo que se dijo: ni datos de tu CV o guion ni conocimiento general. A ti te llama «tú».\n- **Insights:** puntos fuertes, carencias y recomendaciones; si fue una entrevista, también «cómo te fue».\n- **Historial:** al parar la sesión, las últimas Notas e Ideas se guardan en su entrada. Si las pides después de parar, se guardan al terminar de escribirse. En Historial salen bajo el texto, y hay un botón nuevo **Save notes as .md** junto a .txt y .srt (Documentos/MicroPrompt).\n- Si pides Notas otra vez, se guarda la última.\n\n**Comprobado** contra tu Ollama (gemma4:12b) con una reunión de prueba con guion (fecha de lanzamiento, Ana y el presupuesto, la versión en inglés): las notas recogieron justo eso, sin inventar, en 1 s. Tests del prompt y de cómo se juntan las notas. Captura del historial: C:\\Users\\ik3ru\\AppData\\Local\\Temp\\claude\\c13e51b363a4c8f5\\1b4198e0-b46b-41f7-9420-eebebf6081b4\\scratchpad\\history-teleprompter-light.png\n\n**Sin comprobar:** la reunión real de 10 minutos que pide la tarea. Tampoco he pulsado los botones en la app real.\n\n**Límite conocido:** la IA lee los últimos ~16.000 caracteres (unas 3.000 palabras, unos 20 minutos de charla). En una reunión más larga, las notas no cubren el principio. Si lo necesitas, lo amplío.\n\n**Para probarlo:** misma rama que AS-04. Haz una llamada de 10 min con «Ambos», para la sesión, pulsa Notes y luego Insights, y abre la sesión en Historial."
+        }
+      ]
+    },
+    {
+      "id": "AS-07",
+      "title": "Que no salga al compartir pantalla",
+      "state": "proposed",
+      "group": "AS",
+      "at": "2026-11-11T07:47:50Z",
+      "by": "claude-code",
+      "desc": "Opción en Labs, apagada por defecto: la ventana de MicroPrompt no aparece cuando compartes pantalla o grabas (Rune ya lo sabe hacer: lo usa Annotate). Más un atajo para ocultarla al instante. Úsalo sólo donde la ayuda de una IA esté permitida.\n\nHecho cuando: compartiendo pantalla en Teams o Meet, el otro lado no ve la ventana y tú sí."
+    },
+    {
+      "id": "AS-08",
+      "title": "El móvil como mando",
+      "state": "proposed",
+      "group": "AS",
+      "deps": ["AS-03"],
+      "at": "2026-11-11T07:47:50Z",
+      "by": "claude-code",
+      "desc": "Opcional; la última de este grupo. Abres una página en el móvil (misma wifi) y ves el hilo y las respuestas, y puedes pulsar Sugerir, Responder o Capturar sin tocar el PC. A diferencia de Open-Cluely, que lo abre a toda la red sin contraseña, aquí se empareja con un código que muestra la ventana.\n\nHecho cuando: con el móvil emparejado lanzas Sugerir y la respuesta sale en los dos; otro dispositivo sin el código no puede conectarse."
+    },
+    {
+      "id": "SU-06",
+      "title": "Empezar de cero sin salir de la sesión",
+      "state": "proposed",
+      "group": "SU",
+      "at": "2026-11-11T09:06:27Z",
+      "by": "claude-code",
+      "desc": "Con una sesión en marcha, un botón «New session» junto a «Stop session» termina la sesión actual y empieza otra al momento: el hilo, las respuestas de la IA y lo apartado se vacían, y la nueva sigue con la misma fuente, idioma y guion abierto. La sesión que termina se guarda en el Historial como cualquier otra, para no perder nada por error.\n\nHecho cuando: en mitad de una sesión pulsas «New session», la ventana queda vacía y lo que dices después aparece solo; el Historial tiene la sesión anterior."
+    },
+    {
+      "id": "IN-01",
+      "title": "Ver la ventana a cualquier ancho",
+      "state": "done",
+      "group": "IN",
+      "at": "2026-11-12T08:38:07Z",
+      "by": "claude-code",
+      "desc": "Una hoja de capturas de cada panel de MicroPrompt (Teleprompter con y sin sesión, con asistente y guion, Historial, Labs, General) a 3 anchos (estrecho ~560 px, medio ~800 px, ancho ~1200 px), en claro y oscuro, con la lista de lo que se rompe en cada uno. Sirve de punto de partida y para comprobar después cada arreglo.\n\nHecho cuando: tienes la hoja con las capturas y la lista de roturas, y fijamos el ancho mínimo que debe aguantar la ventana.",
+      "notes": [
+        {
+          "at": "2026-11-12T08:39:18Z",
+          "by": "claude-code",
+          "text": "Plan: un script que dibuja las escenas de los paneles de MicroPrompt a 3 anchos en claro y oscuro y monta una hoja HTML para verlas juntas (reutilizable para comprobar IN-02..06), más la lista de roturas y el ancho mínimo de la ventana. Rama feat/in-01-widths encima de feat/as-04-06-ask-notes."
+        },
+        {
+          "at": "2026-11-12T08:42:02Z",
+          "by": "claude-code",
+          "text": "Ya está la hoja de capturas: cada panel de MicroPrompt a 4 anchos, en claro y oscuro. Los anchos son 640, 860 (el mínimo actual de la ventana), 980 (el tamaño con que abre) y 1300.\n\n- **Para verla:** abre `C:\\Users\\ik3ru\\Documents\\projects\\MicroPrompt\\.claude\\worktrees\\prueba\\target\\widths\\index.html` en el navegador.\n- **Para regenerarla** tras cada arreglo: `python tools/microprompt-ui/widths.py`.\n\n**Lo que se rompe**\n- **Cabecera del Teleprompter (IN-02), lo más grave:** sin sesión, a 860 «Start session» queda fuera de la ventana. Ni siquiera a 980, el tamaño por defecto, se ve el título («…»). Sólo cabe todo a 1300. A 640 se pierden también Micrófono/Sistema/Ambos. Con la sesión en marcha (menos botones) cabe desde 860.\n- **Historial (IN-04):** a 640 el detalle queda en una columna de unos 30 px, ilegible. A 860 se corta «Save notes as .md» y la ruta guardada.\n- **Guion de entrevista (IN-04):** las pestañas de sección se cortan a 860 («Preguntas previs…», «Preguntas que h…») y a 640 casi no se leen.\n- **Hilo (IN-04):** a 640 los interruptores «usar en la IA» tocan el borde y se cortan; a 860 y más, bien. El selector de modelo pasa solo a otra línea a 640 (aceptable).\n- **Labs (IN-03/IN-04):** a 640 se cortan «Turned on» y los nombres de las tarjetas; desde 860, bien.\n- **General:** bien a todos los anchos.\n- **Barra lateral (IN-03):** mide siempre unos 230 px; a 640 se come más de un tercio de la ventana.\n- **Ventana ancha (IN-05):** no se rompe nada, pero en el hilo las líneas se alargan mucho. El guion ya limita su ancho y se lee mejor.\n\n**Para decidir: el ancho mínimo**\nPropongo dos pasos:\n1. Primero, que todo funcione bien a 860, el mínimo que ya tiene la ventana. Eso cubre IN-02 e IN-04 y arregla lo que viste.\n2. Después, con la barra lateral compacta (IN-03), bajar el mínimo a 640 para poder poner la ventana al lado de una videollamada.\n\n¿Te vale, o quieres un mínimo distinto?\n\n**Comprobado:** las 88 capturas se generan sin errores. Son escenas de prueba con datos fijos, no la app en marcha.\n\n**Dónde está:** rama `feat/in-01-widths` (encima de AS-04/06), un commit con el script. Sin unir ni subir."
+        }
+      ]
+    },
+    {
+      "id": "IN-02",
+      "title": "Cabecera del Teleprompter que se adapta",
+      "state": "done",
+      "group": "IN",
+      "deps": ["IN-01"],
+      "at": "2026-11-12T08:38:07Z",
+      "by": "claude-code",
+      "desc": "Los controles de arriba (Abrir guion, idioma, Micrófono/Sistema/Ambos, Empezar/Parar, Nueva sesión) dejan de amontonarse: cuando no caben pasan a una segunda fila, y en lo más estrecho idioma y fuente se agrupan en un menú «⋯». El título no queda en «…» y Empezar/Parar se ve siempre.\n\nHecho cuando: al estrechar la ventana hasta el mínimo, ningún botón se tapa ni se sale, en claro y oscuro.",
+      "notes": [
+        {
+          "at": "2026-11-12T08:47:00Z",
+          "by": "claude-code",
+          "text": "Plan: agente propio en worktree in-02, rama feat/in-02-header. Título siempre visible, controles que pasan a otra fila y menú ⋯ en lo más estrecho; Start/Stop siempre visibles. Ancho objetivo: bien a 860 (mínimo actual) y en panel de ~560 px para cuando IN-03 baje el mínimo a 640, como propuse en IN-01."
+        },
+        {
+          "at": "2026-11-12T09:16:21Z",
+          "by": "claude-code",
+          "text": "La cabecera del Teleprompter ya no se sale de la ventana. Cuando los botones no caben junto al título, bajan a una segunda línea alineada a la derecha.\n- El título «Teleprompter» se lee siempre entero.\n- Empezar/Parar sesión se ve a cualquier ancho.\n- Sin sesión, a 640, 860 y 980 px la cabecera ocupa dos líneas; a 1300, una, como antes. Con la sesión en marcha cabe en una línea.\n\nNo ha hecho falta el menú «⋯»: basta con bajar los botones a otra línea. El cambio está en la cabecera común de todos los paneles. Las demás pantallas quedan idénticas píxel a píxel a anchos normales, y en Reuniones y Labs estrechos los botones también bajan de línea en vez de cortarse.\n\n**Dónde está:** rama `feat/in-ui`, que une IN-02, IN-03 e IN-04 encima de IN-01 y AS-04/06; cada tarea tiene también su propia rama. Sin unir a main ni subir. Todos los tests pasan salvo los 2 de SU-05 que ya fallaban, y clippy no da avisos. Las imágenes de referencia de Linux (goldens) quedan desactualizadas, porque sólo se regeneran en Linux.\n\n**Para verlo:** abre la hoja `C:\\Users\\ik3ru\\Documents\\projects\\MicroPrompt\\.claude\\worktrees\\prueba\\target\\widths\\index.html` en el navegador. En la app real no se ha probado: compila la rama `feat/in-ui`, haz la ventana estrecha y luego ancha."
+        }
+      ]
+    },
+    {
+      "id": "IN-03",
+      "title": "Barra lateral compacta",
+      "state": "done",
+      "group": "IN",
+      "deps": ["IN-01"],
+      "at": "2026-11-12T08:38:07Z",
+      "by": "claude-code",
+      "desc": "Por debajo de cierto ancho, la barra lateral se queda en iconos (con su nombre al pasar el ratón y para el lector de pantalla), y la ventana tiene un tamaño mínimo para que nada se monte. Arreglo compartido: vale para todos los paneles, no sólo los de MicroPrompt.\n\nHecho cuando: en la ventana estrecha el panel gana ese espacio y se puede navegar igual con ratón y teclado.",
+      "notes": [
+        {
+          "at": "2026-11-12T08:47:00Z",
+          "by": "claude-code",
+          "text": "Plan: agente propio en worktree in-03, rama feat/in-03-sidebar. Barra lateral a iconos por debajo de un ancho, con nombres accesibles y al pasar el ratón; mínimo de ventana a 640."
+        },
+        {
+          "at": "2026-11-12T09:16:21Z",
+          "by": "claude-code",
+          "text": "Por debajo de 860 px de ancho, la barra lateral se queda en iconos: pasa de unos 220 px a 44 px y el panel gana ese espacio.\n- **Nombres:** al pasar el ratón, cada icono muestra su nombre, y el lector de pantalla también lo lee.\n- **Pie de la barra:** queda como iconos. Salir de Hex; una «i» que muestra la versión y comprueba actualizaciones al pulsarla; y un icono de actualizar con un punto cuando hay una nueva.\n- **Ventana:** el mínimo baja de 860×560 a 640×560 en Windows y Linux. En macOS no cambia nada.\n- **De 860 hacia arriba:** la barra queda igual que antes, píxel a píxel.\n\n**Para revisar:**\n- Los textos emergentes al pasar el ratón no se ven en las capturas. Sólo sé que están definidos; míralos en la app.\n- Las notas de una actualización sólo se ven con la barra ancha.\n\n**Dónde está:** rama `feat/in-ui`, que une IN-02, IN-03 e IN-04 encima de IN-01 y AS-04/06; cada tarea tiene también su propia rama. Sin unir a main ni subir. Todos los tests pasan salvo los 2 de SU-05 que ya fallaban, y clippy no da avisos. Las imágenes de referencia de Linux (goldens) quedan desactualizadas, porque sólo se regeneran en Linux.\n\n**Para verlo:** abre la hoja `C:\\Users\\ik3ru\\Documents\\projects\\MicroPrompt\\.claude\\worktrees\\prueba\\target\\widths\\index.html` en el navegador. En la app real no se ha probado: compila la rama `feat/in-ui`, haz la ventana estrecha y luego ancha."
+        }
+      ]
+    },
+    {
+      "id": "IN-04",
+      "title": "Hilo, tarjetas e Historial a cualquier ancho",
+      "state": "done",
+      "group": "IN",
+      "deps": ["IN-01"],
+      "at": "2026-11-12T08:38:07Z",
+      "by": "claude-code",
+      "desc": "Dentro del Teleprompter: los botones del asistente (Suggest, Answer, Notes, Insights) pasan a otra fila cuando no caben; con muchos modelos, el selector pasa a desplegable; los interruptores «usar en la IA» y la caja de preguntar no quedan cortados. En el Historial, estrecho, el detalle va debajo de la lista en vez de al lado.\n\nHecho cuando: en la hoja de capturas del estrecho y el medio no queda nada cortado ni tapado.",
+      "notes": [
+        {
+          "at": "2026-11-12T08:47:00Z",
+          "by": "claude-code",
+          "text": "Plan: agente propio en worktree in-04, rama feat/in-04-content. Botones del asistente que bajan de fila, selector de modelo desplegable, interruptores y caja de preguntar sin cortes, pestañas del guion, Historial en una columna cuando es estrecho."
+        },
+        {
+          "at": "2026-11-12T09:16:22Z",
+          "by": "claude-code",
+          "text": "El contenido de los paneles ya no se corta en ventana estrecha.\n- **Historial:** si el panel mide menos de 680 px, ves la lista o la entrada elegida, no las dos a la vez; la entrada tiene una flecha «Atrás». Con la barra completa sale en una columna a 860 y en dos a 980. Los botones de exportar bajan de línea y la ruta guardada se lee entera.\n- **Hilo:** los interruptores «usar en la IA» y las respuestas ya no tocan el borde derecho. El guion tenía el mismo fallo y también queda arreglado.\n- **Guion de entrevista:** las secciones son etiquetas que bajan de línea y se leen enteras, como «Preguntas que haré».\n- **Asistente:** los botones Sugerir, Responder, Notas e Ideas bajan de línea si no caben. Hasta 3 modelos se muestran lado a lado; con más, aparece un selector que se despliega dentro de la tarjeta.\n- **Labs:** en estrecho las tarjetas van en una columna y los títulos se leen enteros.\n\n**Para revisar:** el Historial y Labs miden su ancho después de dibujarse. En la app real puede verse un instante la disposición ancha al abrir o redimensionar la ventana. Reuniones usa el mismo diseño de lista y detalle y no lo he cambiado.\n\n**Dónde está:** rama `feat/in-ui`, que une IN-02, IN-03 e IN-04 encima de IN-01 y AS-04/06; cada tarea tiene también su propia rama. Sin unir a main ni subir. Todos los tests pasan salvo los 2 de SU-05 que ya fallaban, y clippy no da avisos. Las imágenes de referencia de Linux (goldens) quedan desactualizadas, porque sólo se regeneran en Linux.\n\n**Para verlo:** abre la hoja `C:\\Users\\ik3ru\\Documents\\projects\\MicroPrompt\\.claude\\worktrees\\prueba\\target\\widths\\index.html` en el navegador. En la app real no se ha probado: compila la rama `feat/in-ui`, haz la ventana estrecha y luego ancha."
+        }
+      ]
+    },
+    {
+      "id": "IN-05",
+      "title": "Hilo más fácil de leer en una llamada",
+      "state": "done",
+      "group": "IN",
+      "deps": ["IN-04"],
+      "at": "2026-11-12T08:38:07Z",
+      "by": "claude-code",
+      "desc": "Aprovechar Rune para que el hilo se lea de un vistazo: «Yo» y «Los demás» se distinguen sin leer el nombre (color o lado), las respuestas largas de la IA se pueden plegar, y un control para el tamaño de letra de los subtítulos (leer a distancia).\n\nHecho cuando: en una llamada de prueba, sabes quién habla y encuentras la última respuesta sin buscar.",
+      "notes": [
+        {
+          "at": "2026-11-12T09:45:44Z",
+          "by": "claude-code",
+          "text": "Plan: (1) cada mensaje lleva una barra lateral de color según quién habla (Yo / Los demás), con colores del tema; (2) las respuestas largas de la IA se pliegan a sus primeras líneas salvo la más reciente, con Mostrar más/menos; (3) un botón Aa en la cabecera cambia el tamaño de los subtítulos (4 tamaños, se guarda). Rama feat/in-05-thread desde main."
+        },
+        {
+          "at": "2026-11-12T09:52:09Z",
+          "by": "claude-code",
+          "text": "El hilo del Teleprompter se lee mejor de un vistazo:\n- **Quién habla:** cada mensaje lleva una barra fina a la izquierda: azul (el color de acento) para «Yo» y gris para «Los demás». El nombre, al cambiar el turno, sale del mismo color.\n- **Respuestas largas plegadas:** cuando llega una respuesta nueva, las anteriores largas se pliegan a sus 3 primeras líneas con «Mostrar más». La más reciente queda siempre abierta, así la encuentras sin buscar. Puedes abrir o plegar cualquiera; al empezar una sesión nueva se olvida.\n- **Tamaño de letra:** el botón **Aa** de la cabecera pasa los subtítulos por 4 tamaños: pequeño, mediano (el de siempre), grande y muy grande. Al pasar el ratón dice el actual, y se recuerda para la próxima vez. Sólo cambia los subtítulos, no las respuestas de la IA.\n\n**Comprobado:** capturas en claro y oscuro a 640, 860 y 980; una escena nueva con letra muy grande; test del recorte de las respuestas plegadas. Todos los tests pasan salvo los 2 de SU-05 que ya fallaban, y clippy no da avisos. Capturas:\n- C:\\Users\\ik3ru\\AppData\\Local\\Temp\\claude\\c13e51b363a4c8f5\\1b4198e0-b46b-41f7-9420-eebebf6081b4\\scratchpad\\in05\\teleprompter-thread-light-860.png\n- C:\\Users\\ik3ru\\AppData\\Local\\Temp\\claude\\c13e51b363a4c8f5\\1b4198e0-b46b-41f7-9420-eebebf6081b4\\scratchpad\\in05\\teleprompter-assistant-dark-980.png\n- C:\\Users\\ik3ru\\AppData\\Local\\Temp\\claude\\c13e51b363a4c8f5\\1b4198e0-b46b-41f7-9420-eebebf6081b4\\scratchpad\\in05\\teleprompter-large-text-dark-980.png\n\n**Sin comprobar:** una llamada de prueba de verdad, que es lo que pide la tarea.\n\n**Para decidir:** si prefieres que «Yo» vaya a la derecha, como en un chat, en vez de con barra, se cambia fácil.\n\n**Dónde está:** rama `feat/in-05-thread`, un commit encima de `main`. Sin unir ni subir."
+        }
+      ]
+    },
+    {
+      "id": "IN-06",
+      "title": "Detalles: iconos, avisos y animaciones",
+      "state": "done",
+      "group": "IN",
+      "deps": ["IN-01"],
+      "at": "2026-11-12T08:38:07Z",
+      "by": "claude-code",
+      "desc": "Pulido con lo que ya trae Rune: iconos en los botones del asistente y su atajo al pasar el ratón; un aviso breve (toast) al guardar notas o exportar en vez de texto fijo; las respuestas y mensajes nuevos entran con una animación suave (respetando «reducir movimiento»). Siempre con los colores y piezas del sistema de diseño.\n\nHecho cuando: lo ves en las capturas y en la app, y no hay ningún color suelto fuera del tema.",
+      "notes": [
+        {
+          "at": "2026-11-12T09:16:27Z",
+          "by": "claude-code",
+          "text": "Plan: un agente en la copia in-04, rama feat/in-06-polish encima de feat/in-ui (IN-02..04 juntas). Iconos y atajo al pasar el ratón en los botones del asistente, aviso breve (toast) al guardar notas/exportar, entrada suave de respuestas y mensajes nuevos respetando reducir movimiento; sólo colores del tema."
+        },
+        {
+          "at": "2026-11-12T09:29:22Z",
+          "by": "claude-code",
+          "text": "Tres detalles nuevos con lo que ya trae Rune:\n- **Botones del asistente con icono:** Sugerir (destellos), Responder (bocadillo), Notas (documento) e Ideas (bombilla). Al pasar el ratón explican qué hacen; en Windows, Sugerir y Responder muestran además su atajo si lo tienen. Siguen bajando de línea en estrecho.\n- **Aviso al exportar desde Historial:** en vez de la línea fija «Saved to…», sale un aviso abajo a la derecha con ✓ y la ruta, que se va solo a los 4 s. Si algo falla, el aviso explica por qué y se queda hasta que lo cierras.\n- **Entrada suave en el hilo:** cada mensaje o respuesta nueva aparece con un fundido y una pequeña subida. No mueve el resto ni el scroll, y respeta «reducir movimiento» de Windows (entonces sólo hay fundido).\n\n**Para revisar:**\n- Los textos al pasar el ratón y la animación no se ven en las capturas; míralos en la app real.\n- En ventana estrecha, mientras se ve, el aviso tapa en parte el botón «Save notes as .md».\n- El botón de cerrar del aviso dice «Close» sin traducir: ese texto viene del kit de Rune.\n- No hay aviso al guardarse las notas de la sesión, porque eso pasa en segundo plano.\n\n**Comprobado:** capturas en claro y oscuro a 640, 860 y 980 sin nada roto; tests (sólo fallan los 2 de SU-05 que ya fallaban) y clippy sin avisos. Captura del aviso: C:\\Users\\ik3ru\\AppData\\Local\\Temp\\claude\\c13e51b363a4c8f5\\1b4198e0-b46b-41f7-9420-eebebf6081b4\\scratchpad\\in-06\\history-light-640.png\n\n**Dónde está:** rama `feat/in-ui`, que ya tiene IN-02, 03, 04 y 06 juntas (y su propia rama `feat/in-06-polish`). Sin unir a main ni subir."
+        }
+      ]
+    },
+    {
+      "id": "SU-07",
+      "title": "El ruido de la llamada no te quita la palabra",
+      "state": "done",
+      "group": "SU",
+      "at": "2026-11-12T11:03:40Z",
+      "by": "claude-code",
+      "desc": "En modo «Ambos», el turno pasa a los demás en cuanto suena cualquier cosa por el audio del sistema, ruido de fondo incluido, y se pierde lo que dices. El turno se decidirá por voz (el detector de voz de Hex), no por nivel de sonido: con ruido de fondo en la llamada, tus frases salen completas como «Yo». Terminado cuando una prueba con ruido grabado en el lado de los demás no corta tu texto. Si habláis a la vez, sigue ganando uno solo (eso es la tarea siguiente).",
+      "notes": [
+        {
+          "at": "2026-11-12T11:10:13Z",
+          "by": "claude-code",
+          "text": "Hecho a la espera de aprobación (rama feat/su-07-voice-turn, sobre IN-05): el turno de los demás exige voz según el detector Silero. Probado con 10 frases grabadas: el ruido solo nunca se queda con el turno; la voz lo mantiene el 96-100 % del tiempo. Falta la prueba en una llamada real."
+        }
+      ]
+    },
+    {
+      "id": "SU-08",
+      "title": "Tú y los demás a la vez, en dos streams",
+      "state": "review",
+      "group": "SU",
+      "deps": ["SU-07"],
+      "at": "2026-11-12T11:03:40Z",
+      "by": "claude-code",
+      "desc": "El micrófono y el audio del sistema se transcriben a la vez, cada uno en su stream sobre el mismo modelo cargado (sin una segunda copia en memoria), y el hilo los fusiona por tiempo. Así no se pierde nada cuando habláis a la vez. Requiere que el motor de Hex alterne ventanas entre dos streams en vivo; con altavoces se reutiliza la supresión de eco de Reuniones para que lo de los demás no salga dos veces. Terminado cuando una conversación con solapes sale entera, cada frase con su hablante, sin duplicados con altavoces.",
+      "notes": [
+        {
+          "at": "2026-11-12T11:20:53Z",
+          "by": "claude-code",
+          "text": "Plan (enfoque acordado en la conversación, en vez de dos streams en vivo, que obligaría a reescribir el motor): el subtítulo en vivo sigue siendo de los demás durante el solape; tu audio de micrófono de ese tramo se guarda, se transcribe de una vez al acabar y entra en su sitio del hilo como «Yo», 1-2 s tarde. Con altavoces, la detección de eco de Reuniones evita duplicar sus palabras."
+        },
+        {
+          "at": "2026-11-12T11:32:33Z",
+          "by": "claude-code",
+          "text": "Cuando habláis a la vez, lo que dices encima ya no se pierde: en modo «Ambos» se guarda aparte, se transcribe al cerrar la ventana en vivo de los demás y aparece en su sitio del hilo como «Yo», y también en el Historial. El subtítulo en vivo no cambia.\n- Con altavoces, solo cuenta como tuyo el sonido que el eco de la llamada no explica (la detección de eco de Reuniones), y una línea que repite las palabras de los demás se descarta.\n- Comprobado con voz sintética: con auriculares y con altavoces se recupera solo tu tramo, y el eco solo no genera nada. Tests y clippy en verde (salvo los 2 ya conocidos de app_settings). No probado aún en una llamada real.\n- Qué mirar: habla encima de alguien, con auriculares y, si puedes, con altavoces. Tu frase debe salir como «Yo» 1-2 s después de que el otro haga una pausa (si habla sin parar, puede tardar hasta que termine). Comprueba que no salen sus palabras repetidas como tuyas.\nRama feat/su-08-overlaps (encima de IN-05 y SU-07); nada unido a main ni subido."
         }
       ]
     }

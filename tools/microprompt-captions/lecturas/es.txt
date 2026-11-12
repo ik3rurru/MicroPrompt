@@ -1,0 +1,13 @@
+Esta mañana he salido temprano de casa porque tenía una reunión a las nueve y media. El tráfico estaba peor que de costumbre, así que he dejado el coche en el aparcamiento de la estación y he cogido el tren. Mientras esperaba en el andén, he repasado las notas de la presentación.
+
+La reunión era con un cliente nuevo que quiere renovar la página web de su tienda. Venden muebles de madera hechos a mano y tienen tres locales, uno en Valencia, otro en Bilbao y el tercero en Sevilla. Su problema principal es que la mayoría de los pedidos llegan por teléfono y nadie sabe cuánto stock queda en cada almacén.
+
+Les he propuesto empezar por algo pequeño. Primero, un catálogo con fotos y precios que se actualice solo. Después, un carrito de compra sencillo. Y por último, si todo va bien, conectar el inventario de los tres locales para que cualquiera pueda consultarlo desde el móvil.
+
+Han preguntado cuánto costaría y cuánto tiempo haría falta. Les he dicho que la primera fase se puede tener en unas seis semanas, y que el precio depende de cuántos productos quieran subir al principio. Creo que les ha gustado que no intentemos hacerlo todo a la vez.
+
+Después de comer he vuelto a la oficina y he estado revisando un error que nos reportaron ayer. Cuando un usuario cambia el idioma de la aplicación, algunas fechas siguen apareciendo en el formato anterior. No parece grave, pero confunde a la gente, sobre todo con los días y los meses.
+
+Al final de la tarde he hablado con Marta sobre las vacaciones. Ella quiere irse la segunda quincena de agosto y yo prefiero julio, así que no hay conflicto. Lo que todavía no sabemos es quién se encargará de las guardias durante esas semanas.
+
+Mañana tengo que preparar el presupuesto para el cliente de los muebles y enviar un resumen de la reunión. También quiero probar el nuevo micrófono, porque el de ahora a veces corta las palabras cuando hablo demasiado bajo.
