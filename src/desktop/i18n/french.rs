@@ -1180,6 +1180,7 @@ const TRANSLATIONS: &[(&str, &str)] = &[
     ("New session", "Nouvelle session"),
     ("Suggest", "Suggérer"),
     ("Answer", "Répondre"),
+    ("Sections", "Sections"),
     ("Notes", "Notes"),
     ("Insights", "Analyse"),
     ("Save notes as .md", "Enregistrer les notes en .md"),

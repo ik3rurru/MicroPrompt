@@ -49,6 +49,9 @@ pub(super) struct HistoryPane {
     pub(super) version_copied: Option<(u64, usize)>,
     /// A Teleprompter session's last export: where it went, or why not.
     pub(super) exported: Option<(u64, Result<String, String>)>,
+    /// The pane's laid-out width: narrow, it shows the list or the
+    /// selected entry, not both (`list_detail::body_at`).
+    width: f32,
 }
 
 /// Transcribe again's chosen model and the language for this one run.
@@ -497,7 +500,9 @@ pub(super) fn pane(ui: &Ui, p: Paint, layer: &mut Vec<El>) -> (Vec<El>, El) {
                 .build(p.k)
                 .key("history-search");
             let column = ld::list_column(p, search, "history-scroll", list);
-            ld::body(p, "history-body", column, detail(ui, p, layer))
+            let showing = pane.selected.is_some_and(|id| pane.entry(id).is_some());
+            let detail = detail(ui, p, layer);
+            ld::body_at(p, "history-body", pane.width, showing, column, detail)
         }
     };
     (
@@ -506,6 +511,7 @@ pub(super) fn pane(ui: &Ui, p: Paint, layer: &mut Vec<El>) -> (Vec<El>, El) {
             .key("history-pane")
             .grow(1.0)
             .shrink()
+            .on_layout(|ui: &mut Ui, [_, _, width, _]| ui.history.width = width)
             .children((!notices.is_empty()).then(|| ld::notices(notices)))
             .child(body),
     )
@@ -803,12 +809,26 @@ fn detail(ui: &Ui, p: Paint, layer: &mut Vec<El>) -> El {
     if ui.settings.labs.keep_recordings && !entry.versions.is_empty() {
         body = body.child(versions_section(ui, p, entry));
     }
+    // One column shows the entry alone; Back returns to the list.
+    let title = ld::card_title(p, tr(entry.kind.label()));
+    let title = if ld::one_column(pane.width) {
+        row()
+            .key("title-row")
+            .gap(4.0)
+            .center_y()
+            .child(ld::back_button(p, "history-back", |ui: &mut Ui, _| {
+                ui.history.selected = None;
+            }))
+            .child(title.grow(1.0).shrink())
+    } else {
+        title
+    };
     col()
         .key("history-detail")
         .grow(1.0)
         .shrink()
         .child(ld::card_header(
-            ld::card_title(p, tr(entry.kind.label())),
+            title,
             vec![ld::meta_text(p, &event_age(entry.timestamp_ms))],
             vec![
                 copy_action(ui, p, id, false),
@@ -855,6 +875,7 @@ fn export_section(ui: &Ui, p: Paint, id: u64, has_notes: bool) -> El {
             row()
                 .key("buttons")
                 .gap(8.0)
+                .flex_wrap()
                 .child(small_button(
                     p,
                     "export-txt",

@@ -8,6 +8,7 @@ use rune::{Align, El, Icon, col, el, icon, row, text};
 
 use super::Ui;
 use super::controls::{DESCRIPTION, METRICS, Paint, raised};
+use crate::desktop::i18n::tr;
 
 /// How far boxes (fields, row fills, the card) hang past the gutter, so the
 /// text inside them lands on the title's edge.
@@ -17,7 +18,10 @@ const LIST_W: f32 = 316.0;
 /// How far a list fades as rows slide under the search field.
 const LIST_FADE: (f32, f32) = (18.0, 28.0);
 /// Room the card's text leaves for its scroll bar.
-const SCROLL_BAR: f32 = 12.0;
+pub(super) const SCROLL_BAR: f32 = 12.0;
+/// A pane narrower than this shows its list or its selected item, not both
+/// side by side: the card would be too thin to read.
+pub(super) const ONE_COLUMN_BELOW: f32 = 680.0;
 
 pub(super) static COPY_ICON: &Icon = &rune_theme_opencode::icons::OUTLINE_COPY;
 pub(super) static TRASH_ICON: &Icon = &rune_theme_opencode::icons::TRASH;
@@ -29,19 +33,69 @@ pub(super) static SEARCH_ICON: &Icon = &rune_theme_opencode::icons::MAGNIFYING_G
 /// card, which hangs as far past the right gutter as the rows do past the
 /// left.
 pub(super) fn body(p: Paint, key: &str, list: El, detail: El) -> El {
-    row().key(key).grow(1.0).shrink().child(list).child(
-        raised(p, "detail-card")
-            .grow(1.0)
-            .shrink()
-            .min_w(0.0)
-            .ml(12.0)
-            .mr(HANG)
-            .mb(HANG)
-            .px(24.0)
-            .pt(20.0)
-            .clip_soft(0.0)
-            .child(detail),
+    row()
+        .key(key)
+        .grow(1.0)
+        .shrink()
+        .child(list)
+        .child(detail_card(p, detail).ml(12.0))
+}
+
+/// [`body`] in a pane `width` points wide. Narrower than
+/// [`ONE_COLUMN_BELOW`] it shows one column: the card alone while
+/// `showing` an item (its header offers [`back_button`]), else the list
+/// alone, as wide as the pane. A width of zero (not laid out yet) reads as
+/// wide.
+pub(super) fn body_at(p: Paint, key: &str, width: f32, showing: bool, list: El, detail: El) -> El {
+    if !one_column(width) {
+        return body(p, key, list, detail);
+    }
+    let only = if showing {
+        detail_card(p, detail).ml(HANG)
+    } else {
+        list.w_full().grow(1.0).shrink().pr(HANG)
+    };
+    row().key(key).grow(1.0).shrink().child(only)
+}
+
+/// Whether a pane `width` points wide shows one column (see [`body_at`]).
+pub(super) fn one_column(width: f32) -> bool {
+    width > 0.0 && width < ONE_COLUMN_BELOW
+}
+
+/// The detail's raised card, hanging past the right gutter as the rows do
+/// past the left.
+fn detail_card(p: Paint, detail: El) -> El {
+    raised(p, "detail-card")
+        .grow(1.0)
+        .shrink()
+        .min_w(0.0)
+        .mr(HANG)
+        .mb(HANG)
+        .px(24.0)
+        .pt(20.0)
+        .clip_soft(0.0)
+        .child(detail)
+}
+
+/// Back to the list, before the card's title while one column shows the
+/// card alone.
+pub(super) fn back_button(
+    p: Paint,
+    key: &str,
+    press: impl Fn(&mut Ui, &mut rune::Tx) + 'static,
+) -> El {
+    // The kit has no left chevron; the right one turned round, as the
+    // model picker's Back.
+    ghost_icon(
+        p,
+        key,
+        &rune_theme_opencode::icons::CHEVRON_RIGHT,
+        tr("Back"),
+        press,
     )
+    .rotate(std::f32::consts::PI)
+    .ml(-6.0)
 }
 
 /// The search field over the scrolling list, both on the title's edge.

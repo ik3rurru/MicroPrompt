@@ -30,7 +30,10 @@ pub(in crate::rune_ui) fn search_field(ui: &Ui, p: Paint) -> El {
     field.build(p.k).key("labs-search")
 }
 
-const SEARCH_WIDTH: f32 = 220.0;
+/// Narrow enough to leave the title room beside the tabs in a narrow pane.
+const SEARCH_WIDTH: f32 = 180.0;
+/// A store narrower than this shows one card a row.
+const ONE_COLUMN_BELOW: f32 = 640.0;
 /// Between cards, across and down.
 const GAP: f32 = 8.0;
 
@@ -63,6 +66,12 @@ pub(in crate::rune_ui) fn page(ui: &Ui, p: Paint) -> El {
     let newest = rows.iter().map(|row| row.lab.added()).max().unwrap_or(0);
     let is_new = |row: &Row| newest > 0 && row.lab.added() == newest;
     let mut content = col().key("content").px(METRICS.gutter).gap(12.0);
+    // Two cards a row, or one where two would cut their titles.
+    let columns = if store.width > 0.0 && store.width < ONE_COLUMN_BELOW {
+        1
+    } else {
+        2
+    };
     let browsing = store.tab == Tab::Discover && store.group.is_none() && query.is_empty();
     // Labs in New in Labs aren't repeated in the grid below.
     let mut featured_labs = Vec::new();
@@ -76,6 +85,7 @@ pub(in crate::rune_ui) fn page(ui: &Ui, p: Paint) -> El {
                 .child(heading(p, "new-heading", tr("New in Labs")))
                 .child(pair(
                     "featured",
+                    columns,
                     featured
                         .into_iter()
                         .map(|row| card(ui, p, row, true, true))
@@ -120,9 +130,10 @@ pub(in crate::rune_ui) fn page(ui: &Ui, p: Paint) -> El {
             content = content.child(group_header(p, group, members.len(), open, filtering));
             if open {
                 let mut grid = col().key(format!("grid-{}", group.id())).gap(GAP);
-                for (index, pair_rows) in members.chunks(2).enumerate() {
+                for (index, pair_rows) in members.chunks(columns).enumerate() {
                     grid = grid.child(pair(
                         &format!("grid-row{index}"),
+                        columns,
                         pair_rows
                             .iter()
                             .map(|row| card(ui, p, row, is_new(row), false))
@@ -139,6 +150,7 @@ pub(in crate::rune_ui) fn page(ui: &Ui, p: Paint) -> El {
         .grow(1.0)
         .shrink()
         .min_h(0.0)
+        .on_layout(|ui: &mut Ui, [_, _, width, _]| ui.lab_store.width = width)
         .child(chips(&rows, store.group, p))
         .child(super::super::scroll_body(p.k, "scroll", content))
 }
@@ -156,7 +168,11 @@ fn heading(p: Paint, key: &str, title: &str) -> El {
 }
 
 /// Two cards side by side, equally wide; a lone card keeps half the row.
-fn pair(key: &str, cards: Vec<El>) -> El {
+/// With one column they stack.
+fn pair(key: &str, columns: usize, cards: Vec<El>) -> El {
+    if columns == 1 {
+        return col().key(key).gap(GAP).children(cards);
+    }
     row()
         .key(key)
         .gap(GAP)
@@ -252,6 +268,23 @@ fn chip(
     selected: bool,
     group: Option<Group>,
 ) -> El {
+    chip_shell(p, key, label, selected)
+        .child(
+            text(count.to_string())
+                .key("count")
+                .font(p.k.ty.small)
+                .color(p.faint()),
+        )
+        .on_press_tx(move |ui: &mut Ui, tx: &mut Tx| {
+            tx.settle();
+            ui.lab_store.group = group;
+        })
+}
+
+/// A rounded chip, one of a wrapping row of choices (a radio): its label,
+/// filled while `selected`. A label too long for the row truncates. The
+/// caller adds what follows the label and the press.
+pub(in crate::rune_ui) fn chip_shell(p: Paint, key: &str, label: &str, selected: bool) -> El {
     let c = &p.k.c;
     let chip = row()
         .key(key)
@@ -261,6 +294,8 @@ fn chip(
         .px(10.0)
         .gap(6.0)
         .center_y()
+        .shrink()
+        .min_w(0.0)
         .radius(13.0)
         .border(
             p.hair,
@@ -272,21 +307,15 @@ fn chip(
         )
         .hover(c.hover)
         .press(c.pressed)
-        .child(text(label).key("label").font(p.k.ty.ui).color(if selected {
-            p.text()
-        } else {
-            p.muted()
-        }))
         .child(
-            text(count.to_string())
-                .key("count")
-                .font(p.k.ty.small)
-                .color(p.faint()),
-        )
-        .on_press_tx(move |ui: &mut Ui, tx: &mut Tx| {
-            tx.settle();
-            ui.lab_store.group = group;
-        });
+            text(label)
+                .key("label")
+                .font(p.k.ty.ui)
+                .color(if selected { p.text() } else { p.muted() })
+                .truncate()
+                .shrink()
+                .min_w(0.0),
+        );
     if selected {
         chip.fill(c.layer_02)
     } else {

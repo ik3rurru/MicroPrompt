@@ -207,6 +207,8 @@ pub(super) struct Store {
     pub(super) tab: Tab,
     /// The chip selected: only this group's labs show.
     pub(super) group: Option<Group>,
+    /// The store's laid-out width: narrow, its cards stack in one column.
+    width: f32,
 }
 
 impl Store {

@@ -49,7 +49,10 @@ def main() -> int:
                 png = out / f"{scene}-{theme}-{width}.png"
                 run = subprocess.run(
                     [args.exe, "app", "--", "--snap", str(png), "--scene", scene,
-                     "--theme", theme, "--size", f"{width}x{HEIGHT}", "--scale", "1"],
+                     "--theme", theme, "--size", f"{width}x{HEIGHT}", "--scale", "1",
+                     # Past the first frame: panes that measure their width
+                     # (History, Labs) lay out again once they know it.
+                     "--at", "0.5"],
                     capture_output=True, text=True,
                 )
                 if run.returncode != 0 or not png.exists():

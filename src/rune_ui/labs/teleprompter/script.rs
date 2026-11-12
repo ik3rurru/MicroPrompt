@@ -12,7 +12,8 @@ use rune_kit::{Markdown, MarkdownStyle};
 
 use crate::desktop::file_dialog::{Dialog, Filter, Pending, Target};
 use crate::desktop::i18n::{tr, tr_fill};
-use crate::rune_ui::controls::{ButtonKind, METRICS, Paint, button, segmented};
+use crate::rune_ui::controls::{ButtonKind, METRICS, Paint, button};
+use crate::rune_ui::labs::store::chip_shell;
 use crate::rune_ui::platform::PlatformState;
 use crate::rune_ui::{Ui, list_detail};
 use crate::teleprompter::interview::{DOCUMENTS, Interview};
@@ -247,7 +248,7 @@ pub(in crate::rune_ui) fn view(ui: &Ui, p: Paint) -> Option<El> {
             .child(list_detail::card_scroll(
                 p,
                 "teleprompter-script-text",
-                lines,
+                inset(lines),
             )),
     )
 }
@@ -255,13 +256,24 @@ pub(in crate::rune_ui) fn view(ui: &Ui, p: Paint) -> Option<El> {
 /// An interview: its sections to pick from, its documents, and the picked
 /// section in the script's type. A task ticks off (the questions to ask).
 fn interview_view(p: Paint, script: &Script, interview: &Interview, section: usize) -> El {
-    let titles = interview.sections.iter().map(|it| it.title.as_str());
-    let titles = titles.collect::<Vec<_>>();
-    let section = section.min(titles.len().saturating_sub(1));
-    let sections = segmented(p, "interview-sections", &titles, section, |ui, index| {
-        ui.platform.teleprompter_script.section = index;
-    });
-    let mut documents = row().key("interview-documents").gap(8.0);
+    let section = section.min(interview.sections.len().saturating_sub(1));
+    // Chips that wrap, not a segmented control: section titles are long
+    // and the pane can be narrow.
+    let mut sections = row()
+        .key("interview-sections")
+        .role("radiogroup")
+        .label(tr("Sections"))
+        .gap(6.0)
+        .flex_wrap();
+    for (index, it) in interview.sections.iter().enumerate() {
+        sections = sections.child(
+            chip_shell(p, &format!("section-{index}"), &it.title, index == section)
+                .checked(index == section)
+                .focusable(true)
+                .on_press(move |ui: &mut Ui| ui.platform.teleprompter_script.section = index),
+        );
+    }
+    let mut documents = row().key("interview-documents").gap(8.0).flex_wrap();
     for (index, (name, _)) in DOCUMENTS.into_iter().enumerate() {
         let label = match &interview.documents[index] {
             Some(document) => format!("{}: {}", tr(name), document.name),
@@ -310,5 +322,11 @@ fn interview_view(p: Paint, script: &Script, interview: &Interview, section: usi
                 .child(sections)
                 .child(documents),
         )
-        .child(list_detail::card_scroll(p, "interview-text", lines))
+        .child(list_detail::card_scroll(p, "interview-text", inset(lines)))
+}
+
+/// The reading column inside its scroll, whose own right padding (the
+/// bar's room) would replace the column's.
+fn inset(column: El) -> El {
+    col().key("script-inset").w_full().child(column)
 }

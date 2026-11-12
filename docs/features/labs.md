@@ -38,6 +38,9 @@ Feature             Pane  Toggle (settings.json, hex settings)   On: what it doe
 │                                        checked by hand on Windows with HEX_AUDIO_FIXTURE and UI Automation; no golden yet)
 │                                        a stopped session is kept in History (kind Teleprompter, timed lines, 128 KiB of text)
 │                                        and saves as .txt or .srt into Documents/MicroPrompt (scene history-teleprompter)
+│                                        IN-04: a History pane under 680 points wide (list_detail::body_at) shows the list or the
+│                                        selected entry, not both; the entry's card has Back (scenes history-teleprompter,
+│                                        history-unselected; layout read from on_layout, so snaps need --at 0.5; not tried live)
 │                                        labs.teleprompter_hotkey (unbound): a Windows system hotkey (RegisterHotKey, src/teleprompter/hotkey.rs)
 │                                        starts and stops it with the window closed; Linux binds `hex teleprompter toggle`
 │                                        labs.teleprompter_source (microphone default, system, both): the pane's header picks
@@ -57,8 +60,8 @@ Feature             Pane  Toggle (settings.json, hex settings)   On: what it doe
 │                                        untouched; default English when dictation is English, else Spanish); a model without
 │                                        it refuses to start and says so (Parakeet Unified English: no Spanish)
 ├── Interview prep  no    labs.interview        (Linux, Windows)  MicroPrompt: in Teleprompter, Open script… on a Markdown script with `## ` sections
-│                                        (tools/microprompt-interview's template) shows one section at a time, picked from a segmented
-│                                        row of their titles; the section of questions to ask ("Preguntas que haré", "… to ask") lists
+│                                        (tools/microprompt-interview's template) shows one section at a time, picked from a wrapping
+│                                        row of chips with their titles (IN-04: whole titles at any width); the section of questions to ask ("Preguntas que haré", "… to ask") lists
 │                                        them as tasks, and a click ticks one off, struck through, until the script closes; CV…, Offer…
 │                                        and Company notes… choose a .md or .txt each, taken by name from the script's folder when it
 │                                        opens (cv, oferta/offer, empresa/company); all local and in memory, nothing is sent or saved
@@ -78,7 +81,8 @@ Feature             Pane  Toggle (settings.json, hex settings)   On: what it doe
 ├── Assistant       no    labs.assistant        (Linux, Windows)  MicroPrompt: Teleprompter shows a Local model card: whether Ollama runs on this
 │                                        computer (127.0.0.1:11434, loopback HTTP; its cloud models are left out, so nothing leaves it),
 │                                        its installed models to pick from (`labs.assistant_model`, default gemma4:12b, else the first
-│                                        installed; looked for once a run, Check again after Ollama starts), and two actions (AS-03):
+│                                        installed; up to three side by side, more from a select that opens its list in the card,
+│                                        scene teleprompter-assistant-models; the action buttons wrap in a narrow pane; looked for once a run, Check again after Ollama starts), and two actions (AS-03):
 │                                        Suggest (what to say now: a few spoken sentences, key points, likely follow-ups; reads the
 │                                        conversation) and Answer (what was asked, in a format per kind: code, design, behavioral,
 │                                        concept, small talk; also reads earlier answers). Both read the open script and its CV, offer,
