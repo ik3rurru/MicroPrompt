@@ -52,14 +52,22 @@ const MICROPHONE_DELAY: usize = SAMPLE_RATE / 4;
 /// How long the others keep the turn after the system audio's last sound:
 /// the microphone's delay, the hold's slack, and the room's echo.
 // ponytail: fixed times and levels; an answer begun within a quarter second
-// of the others' last word loses its start, and words said over the others
-// are not heard. Arrival timestamps per block and Hex's meeting echo model
-// (`meeting/echo`) if it matters.
+// of the others' last word loses its start, and words said over the others'
+// voice are not heard (SU-08: two streams). Arrival timestamps per block and
+// Hex's meeting echo model (`meeting/echo`) if it matters.
 const OTHERS_TAIL: usize = MICROPHONE_DELAY + MIX_HOLD + SAMPLE_RATE / 4;
 /// A frame's RMS above which the system audio plays (about -54 dBFS) and
 /// the microphone hears a voice (about -48 dBFS).
 const PLAYING: f32 = 0.002;
 const SPEAKING: f32 = 0.004;
+/// The system audio takes the turn only for a voice (SU-07): background
+/// noise in a call, music, or a fan plays without taking the microphone's
+/// words. The speech detector judges the last [`VOICE_PAST`] played and the
+/// next [`VOICE_AHEAD`] held back, every [`VOICE_STEP`]; looking ahead finds
+/// the others' first word in time. Without the detector, any sound counts.
+const VOICE_PAST: usize = SAMPLE_RATE * 3 / 10;
+const VOICE_AHEAD: usize = MIX_HOLD;
+const VOICE_STEP: usize = SAMPLE_RATE / 10;
 
 /// The running session's system audio and mixer.
 struct Running {
@@ -183,14 +191,20 @@ struct Turns {
     others_until: usize,
     /// Who spoke last; a quiet frame changes nothing.
     speaker: Option<Speaker>,
+    /// The system audio's last [`VOICE_PAST`] samples, for the detector.
+    played: Vec<f32>,
+    /// Whether the system audio holds a voice, as of `voice_at`.
+    voice: Option<bool>,
+    voice_at: Option<usize>,
 }
 
 impl Turns {
     /// Takes both sides' whole frames up to the longer one's length less
     /// `hold`, leaving the rest for the next call, and returns one side's
-    /// audio per frame as runs of one speaker: the system audio while it
-    /// plays and for [`OTHERS_TAIL`] after, else the microphone. A side that
-    /// delivered nothing (the loopback while nothing plays) is silent.
+    /// audio per frame as runs of one speaker: the system audio while a
+    /// voice plays in it and for [`OTHERS_TAIL`] after, else the microphone.
+    /// A side that delivered nothing (the loopback while nothing plays) is
+    /// silent.
     fn take(
         &mut self,
         microphone: &mut Vec<f32>,
@@ -202,7 +216,10 @@ impl Turns {
         for _ in 0..frames {
             let played: Vec<f32> = system.drain(..FRAME.min(system.len())).collect();
             let heard: Vec<f32> = microphone.drain(..FRAME.min(microphone.len())).collect();
-            if level(&played) > PLAYING {
+            self.played.extend_from_slice(&played);
+            let old = self.played.len().saturating_sub(VOICE_PAST);
+            self.played.drain(..old);
+            if level(&played) > PLAYING && self.voiced(system) {
                 self.others_until = self.position + OTHERS_TAIL;
             }
             let mut frame = if self.position < self.others_until {
@@ -222,6 +239,22 @@ impl Turns {
             }
         }
         runs
+    }
+
+    /// Whether the system audio around the current frame holds a voice,
+    /// asking the detector at most once per [`VOICE_STEP`]; `ahead` is what
+    /// is held back. Without a detector, every sound counts as a voice.
+    fn voiced(&mut self, ahead: &[f32]) -> bool {
+        if self
+            .voice_at
+            .is_none_or(|at| self.position >= at + VOICE_STEP)
+        {
+            let mut window = self.played.clone();
+            window.extend_from_slice(&ahead[..VOICE_AHEAD.min(ahead.len())]);
+            self.voice = crate::transcription::speech_detector::contains_speech(&window);
+            self.voice_at = Some(self.position);
+        }
+        self.voice.unwrap_or(true)
     }
 }
 
@@ -269,6 +302,27 @@ mod tests {
             [(vec![0.1; FRAME * 2], Some(Speaker::Me))]
         );
         assert_eq!(microphone.len(), FRAME);
+    }
+
+    #[test]
+    fn noise_in_the_call_leaves_me_the_turn() {
+        let second = SAMPLE_RATE;
+        // The call plays noise, no voice, while I speak: my words, as mine.
+        let _noise = crate::transcription::speech_detector::override_for_test(Some(false));
+        let mut turns = Turns::default();
+        let (mut microphone, mut system) = (vec![0.1; second], vec![0.2; second]);
+        assert_eq!(
+            turns.take(&mut microphone, &mut system, 0),
+            [(vec![0.1; second], Some(Speaker::Me))]
+        );
+        // A voice in the call takes the turn, as before.
+        let _voice = crate::transcription::speech_detector::override_for_test(Some(true));
+        let mut turns = Turns::default();
+        let (mut microphone, mut system) = (vec![0.1; second], vec![0.2; second]);
+        assert_eq!(
+            turns.take(&mut microphone, &mut system, 0),
+            [(vec![0.2; second], Some(Speaker::Others))]
+        );
     }
 
     #[test]

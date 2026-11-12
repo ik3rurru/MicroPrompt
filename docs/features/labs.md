@@ -47,11 +47,15 @@ Feature             Pane  Toggle (settings.json, hex settings)   On: what it doe
 │                                        labs.teleprompter_source (microphone default, system, both): the pane's header picks
 │                                        what a session captions, saved for the next; system audio is the meetings' source
 │                                        (meeting::system_audio: WASAPI loopback, PipeWire monitor); both take turns in the one
-│                                        stream (the engine runs one live stream): the system audio while it plays and 0.7 s after,
-│                                        else the microphone 0.25 s late, so the speakers' echo is never heard as yours; a change of
-│                                        speaker ends the segment (Stream::cut) and lines read under Me / Others, in History too
-│                                        (src/teleprompter/source.rs; scene teleprompter-speakers; turns and cut unit-tested only,
-│                                        no call measured; words said over the others are lost)
+│                                        stream (the engine runs one live stream): the system audio while a voice plays in it (the
+│                                        speech detector, SU-07, over 0.3 s played and 0.2 s held back, every 0.1 s; any sound
+│                                        without the detector) and 0.7 s after, else the microphone 0.25 s late, so the speakers'
+│                                        echo is never heard as yours and a call's background noise never takes your words; a
+│                                        change of speaker ends the segment (Stream::cut) and lines read under Me / Others, in
+│                                        History too (src/teleprompter/source.rs; scene teleprompter-speakers; turns and cut
+│                                        unit-tested; the detector probed on 10 recorded phrases: noise alone never took the turn,
+│                                        a voice held it for 96-100% of its frames, 90-100% under noise at half its level; no call
+│                                        measured; words said over the others' voice are lost until SU-08)
 │                                        Open script… shows a .txt or .md file in large type, scrolling, in place of the text until
 │                                        Close script; Markdown draws formatted through rune-kit's `markdown` renderer: headings, emphasis,
 │                                        nested lists, quotes, code, tables, block by block in a centred reading column (src/teleprompter/script.rs;
