@@ -106,6 +106,8 @@ pub struct LabsSettings {
     /// MicroPrompt: the Ollama model the assistant uses; left out of the file while unset, when it is `teleprompter::assistant::DEFAULT_MODEL`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub assistant_model: Option<String>,
+    /// MicroPrompt: how large the Teleprompter's captions read (IN-05).
+    pub teleprompter_text_size: CaptionSize,
     /// Settings › Labs' groups opened or closed by hand, by `labs::Group`
     /// id; a group not here is open while it holds a lab that's on.
     #[serde(skip_serializing_if = "std::collections::BTreeMap::is_empty")]
@@ -140,6 +142,36 @@ impl LabsSettings {
 /// MicroPrompt: the Teleprompter's own shortcuts (Windows system hotkeys,
 /// `crate::teleprompter::hotkey`): start and stop, and with Labs ›
 /// Assistant its Suggest and Answer.
+/// MicroPrompt: the Teleprompter's caption sizes, to read from a distance.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CaptionSize {
+    Small,
+    #[default]
+    Medium,
+    Large,
+    Huge,
+}
+
+impl CaptionSize {
+    pub const ALL: [Self; 4] = [Self::Small, Self::Medium, Self::Large, Self::Huge];
+
+    /// The next size up, back to the smallest after the largest.
+    pub fn next(self) -> Self {
+        let index = Self::ALL.iter().position(|it| *it == self).unwrap_or(1);
+        Self::ALL[(index + 1) % Self::ALL.len()]
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Small => "Small",
+            Self::Medium => "Medium",
+            Self::Large => "Large",
+            Self::Huge => "Extra large",
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum TeleprompterKey {
     Toggle,
@@ -210,6 +242,7 @@ impl Default for LabsSettings {
             interview: false,
             assistant: false,
             assistant_model: None,
+            teleprompter_text_size: CaptionSize::default(),
             teleprompter_hotkey: None,
             assistant_suggest_hotkey: None,
             assistant_answer_hotkey: None,

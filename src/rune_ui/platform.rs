@@ -338,6 +338,9 @@ pub(super) struct PlatformState {
     pub(super) teleprompter_script: super::labs::teleprompter::script::ScriptPane,
     /// What the user is typing to the assistant (AS-04).
     pub(super) teleprompter_ask: rune::TextEdit,
+    /// The thread's answers whose fold was flipped by hand (IN-05): an
+    /// older long answer opens, the newest one closes.
+    pub(super) teleprompter_flipped: std::collections::BTreeSet<usize>,
     /// The Scrawl pane, while the `capture` experiment is on; `None` hides
     /// it.
     #[cfg(hex_capture)]
@@ -404,6 +407,7 @@ impl PlatformState {
             teleprompter_assistant: Default::default(),
             teleprompter_script: Default::default(),
             teleprompter_ask: Default::default(),
+            teleprompter_flipped: Default::default(),
             #[cfg(hex_capture)]
             scrawl: None,
         }

@@ -770,6 +770,12 @@ pub(super) const SCENES: &[Scene] = &[
             ..Default::default()
         };
     }),
+    // MicroPrompt (IN-05): captions at Extra large, to read from a distance.
+    ("teleprompter-large-text", |ui| {
+        let speakers = SCENES.iter().find(|it| it.0 == "teleprompter-speakers");
+        (speakers.expect("a scene").1)(ui);
+        ui.settings.labs.teleprompter_text_size = crate::app_settings::CaptionSize::Huge;
+    }),
     ("teleprompter-idle", |ui| {
         *ui = fixture(DesktopShortcuts::Registered);
         ui.platform = platform::PlatformState::preview(platform::Capabilities::WINDOWS);

@@ -114,6 +114,11 @@ Feature             Pane  Toggle (settings.json, hex settings)   On: what it doe
 │                                        Answer's shortcut on Windows when bound; a new message or answer rises into the thread as it
 │                                        fades in (a fade alone under Reduce Motion). Checked in --snap scenes, settled; the
 │                                        entrance and the tooltips not watched in the running app.
+│                                        IN-05: each message carries a bar by speaker (Me: accent, Others: neutral), the name in the
+│                                        same colour; a long finished answer folds to its first 3 lines once a newer answer comes
+│                                        (Show more / Show less flip it, forgotten at a new session); Aa in the header steps the
+│                                        captions through four sizes (`labs.teleprompter_text_size`: small, medium, large, huge).
+│                                        Scene teleprompter-large-text; the fold's excerpt unit-tested; not tried on a call.
 ├── Live chapters   no    labs.live_chapters           (macOS)   chapters a meeting while it records, boundary pass after Stop
 ├── Vocabulary biasing no labs.vocabulary_biasing                Parakeet transcription biased toward the vocabulary (#452/#457)
 ├── Switch model with keyboard language  no  keyboard_model_switching.enabled  (macOS, Windows, X11)

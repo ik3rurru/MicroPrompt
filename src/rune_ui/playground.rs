@@ -266,6 +266,10 @@ const PATHS: &[(&str, &str)] = &[
         "Linux & Windows/Teleprompter/Me and others",
     ),
     (
+        "teleprompter-large-text",
+        "Linux & Windows/Teleprompter/Extra large text",
+    ),
+    (
         "teleprompter-interview",
         "Linux & Windows/Teleprompter/Interview",
     ),

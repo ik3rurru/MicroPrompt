@@ -507,6 +507,11 @@ const KEYS: &[Key] = &[
         Kind::Bool,
         "Labs: A local model on this computer answers in Teleprompter, through Ollama; nothing leaves it (Linux, Windows)",
     ),
+    key(
+        "labs.teleprompter_text_size",
+        Kind::Choice(&["small", "medium", "large", "huge"]),
+        "Labs › Teleprompter: how large the captions read: small, medium (the default), large, or huge, to read from a distance",
+    ),
     optional(
         "labs.assistant_model",
         Kind::Text,

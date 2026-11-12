@@ -23,6 +23,7 @@ SCENES = [
     "teleprompter-idle",
     "teleprompter",
     "teleprompter-speakers",
+    "teleprompter-large-text",
     "teleprompter-assistant-idle",
     "teleprompter-assistant",
     "teleprompter-thread",

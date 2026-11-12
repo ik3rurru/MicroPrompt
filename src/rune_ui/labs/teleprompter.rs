@@ -7,8 +7,9 @@
 mod assistant;
 pub(in crate::rune_ui) mod script;
 
-use rune::{El, Span, TextStyle, Transition, col, rich, row, text};
+use rune::{El, Span, TextStyle, Transition, col, el, rich, row, text};
 
+use crate::app_settings::CaptionSize;
 use crate::desktop::i18n::tr;
 use crate::rune_ui::controls::{ButtonKind, METRICS, Paint, button, card, pulsing_dot, row_switch};
 use crate::rune_ui::lists::placeholder;
@@ -17,8 +18,20 @@ use crate::rune_ui::{Tx, Ui, list_detail};
 use crate::teleprompter::View;
 use crate::teleprompter::source::Speaker;
 
-/// Subtitles read from across the room, not like a settings row.
-const CAPTION: TextStyle = TextStyle::new(26.0, 450.0).lh(36.0);
+/// Subtitles read from across the room, not like a settings row, at the
+/// size Aa picks (`labs.teleprompter_text_size`, IN-05).
+fn caption(size: CaptionSize) -> TextStyle {
+    match size {
+        CaptionSize::Small => TextStyle::new(20.0, 450.0).lh(28.0),
+        CaptionSize::Medium => TextStyle::new(26.0, 450.0).lh(36.0),
+        CaptionSize::Large => TextStyle::new(34.0, 450.0).lh(46.0),
+        CaptionSize::Huge => TextStyle::new(44.0, 450.0).lh(58.0),
+    }
+}
+
+/// A folded answer keeps this many non-empty lines, at most this many bytes.
+const FOLDED_LINES: usize = 3;
+const FOLDED_BYTES: usize = 240;
 /// The assistant's answers: read at a glance during a call, below captions.
 const ANSWER: TextStyle = TextStyle::new(20.0, 450.0).lh(30.0);
 
@@ -36,7 +49,12 @@ pub(in crate::rune_ui) fn poll(state: &mut PlatformState) -> bool {
     if generation == state.teleprompter.generation {
         return script;
     }
-    state.teleprompter = crate::teleprompter::view();
+    let view = crate::teleprompter::view();
+    // A new session starts its answers over: their flips go with the old.
+    if view.answers.len() < state.teleprompter.answers.len() {
+        state.teleprompter_flipped.clear();
+    }
+    state.teleprompter = view;
     true
 }
 
@@ -44,7 +62,7 @@ pub(in crate::rune_ui) fn pane(ui: &Ui, p: Paint) -> (Vec<El>, El) {
     let view = &ui.platform.teleprompter;
     let lab = crate::labs::Feature::Assistant;
     let assistant = lab.on_this_os() && lab.on(&ui.settings);
-    let body = script::view(ui, p).unwrap_or_else(|| body(p, view, assistant));
+    let body = script::view(ui, p).unwrap_or_else(|| body(ui, p, view, assistant));
     let body = match assistant.then(|| ask_box(ui, p)) {
         None => body,
         Some(ask) => col()
@@ -55,7 +73,8 @@ pub(in crate::rune_ui) fn pane(ui: &Ui, p: Paint) -> (Vec<El>, El) {
             .child(ask),
     };
     let script = script::button_for(ui, p);
-    let actions = std::iter::once(script)
+    let actions = [text_size(ui, p), script]
+        .into_iter()
         .chain(actions(ui, p, view))
         .collect();
     let assistant = assistant::card_for(ui, p);
@@ -178,7 +197,8 @@ fn control(p: Paint, view: &View) -> El {
         ))
 }
 
-fn body(p: Paint, view: &View, assistant: bool) -> El {
+fn body(ui: &Ui, p: Paint, view: &View, assistant: bool) -> El {
+    let caption = caption(ui.settings.labs.teleprompter_text_size);
     let error = view.error.as_ref().map(|error| {
         text(error.clone())
             .key("teleprompter-error")
@@ -213,7 +233,7 @@ fn body(p: Paint, view: &View, assistant: bool) -> El {
     let mut last = None;
     for message in crate::teleprompter::conversation::messages(view) {
         if let Some(index) = message.answer {
-            lines = lines.child(answer(p, view, index, &message, assistant));
+            lines = lines.child(answer(ui, p, view, index, &message, assistant));
             last = None;
             continue;
         }
@@ -229,14 +249,21 @@ fn body(p: Paint, view: &View, assistant: bool) -> El {
         };
         let words = rich(message.text, vec![faint])
             .key(format!("message-{first}"))
-            .font(CAPTION)
+            .font(caption)
             .color(color);
+        // Who speaks reads at a glance: the user's messages carry the
+        // accent bar, the others' a neutral one; the name, on a turn's
+        // first message, takes the same colour.
+        let tint = message.speaker.map(|speaker| match speaker {
+            Speaker::Me => p.accent(),
+            Speaker::Others => p.k.c.border_strong,
+        });
         let name = named.map(|speaker| {
-            let name = match speaker {
-                Speaker::Me => tr("Me"),
-                Speaker::Others => tr("Others"),
+            let (name, color) = match speaker {
+                Speaker::Me => (tr("Me"), p.accent()),
+                Speaker::Others => (tr("Others"), p.muted()),
             };
-            text(name).font(p.k.ty.ui).color(p.faint())
+            text(name).font(p.k.ty.ui_medium).color(color)
         });
         let used = message.used;
         let switch = assistant.then(|| {
@@ -253,13 +280,22 @@ fn body(p: Paint, view: &View, assistant: bool) -> El {
                 .child(row().key("space").grow(1.0))
                 .children(switch)
         });
+        let spaced = header.is_some();
+        let message = col()
+            .key("message")
+            .grow(1.0)
+            .shrink()
+            .gap(2.0)
+            .children(header)
+            .child(words);
+        let bar = tint.map(|tint| el().key("speaker-bar").w(3.0).radius(1.5).fill(tint));
         lines = lines.child(
-            col()
+            row()
                 .key(format!("thread-{first}"))
-                .gap(2.0)
-                .pt(if header.is_some() { 6.0 } else { 0.0 })
-                .children(header)
-                .child(words)
+                .gap(12.0)
+                .pt(if spaced { 6.0 } else { 0.0 })
+                .children(bar)
+                .child(message)
                 .transition(arrives()),
         );
     }
@@ -319,9 +355,39 @@ fn language(ui: &Ui, p: Paint) -> El {
     )
 }
 
+/// The first lines of a long answer, for its folded view (IN-05): up to
+/// [`FOLDED_LINES`] non-empty lines and [`FOLDED_BYTES`], cut at a word.
+/// `None` when the answer is short enough to show whole.
+fn excerpt(text: &str) -> Option<&str> {
+    let text = text.trim_end();
+    let mut end = 0;
+    let mut lines = 0;
+    for line in text.split_inclusive('\n') {
+        if lines == FOLDED_LINES {
+            break;
+        }
+        end += line.len();
+        if !line.trim().is_empty() {
+            lines += 1;
+        }
+    }
+    if end > FOLDED_BYTES {
+        let mut cut = FOLDED_BYTES;
+        while !text.is_char_boundary(cut) {
+            cut -= 1;
+        }
+        end = text[..cut].rfind(char::is_whitespace).unwrap_or(cut);
+    }
+    let shown = text[..end].trim_end();
+    (shown.len() < text.len()).then_some(shown)
+}
+
 /// An answer of the assistant's in the thread: its action's name, its
-/// switch, and its Markdown, larger than the UI to read during a call.
+/// switch, and its Markdown, larger than the UI to read during a call. A
+/// long finished answer folds to its first lines once a newer one comes,
+/// so the newest is easy to find; Show more and Show less flip it.
 fn answer(
+    ui: &Ui,
     p: Paint,
     view: &View,
     index: usize,
@@ -356,6 +422,31 @@ fn answer(
             .color(p.muted())
             .wrap()
     });
+    let newest = index + 1 == view.answers.len();
+    let excerpt = (answer.done && answer.error.is_none())
+        .then(|| excerpt(&message.text))
+        .flatten();
+    let flipped = ui.platform.teleprompter_flipped.contains(&index);
+    let folded = excerpt.is_some() && (newest == flipped);
+    let fold = excerpt.is_some().then(|| {
+        let label = if folded {
+            tr("Show more")
+        } else {
+            tr("Show less")
+        };
+        crate::rune_ui::lists::small_button(
+            p,
+            "answer-fold",
+            label,
+            move |ui: &mut Ui, _: &mut Tx| {
+                let flipped = &mut ui.platform.teleprompter_flipped;
+                if !flipped.remove(&index) {
+                    flipped.insert(index);
+                }
+            },
+        )
+        .self_start()
+    });
     let body = if answer.error.is_some() {
         text(message.text.clone())
             .font(ANSWER)
@@ -364,7 +455,8 @@ fn answer(
     } else {
         let style = rune_kit::MarkdownStyle::from_kit(p.k).body_font(ANSWER);
         let style = if used { style } else { style.text(p.faint()) };
-        rune_kit::Markdown::new(&message.text).render(&style)
+        let shown = excerpt.filter(|_| folded).unwrap_or(&message.text);
+        rune_kit::Markdown::new(shown).render(&style)
     };
     crate::rune_ui::controls::raised(p, &format!("answer-{index}"))
         .gap(6.0)
@@ -373,6 +465,7 @@ fn answer(
         .child(header)
         .children(typed)
         .child(body.key("answer-text"))
+        .children(fold)
         .transition(arrives())
 }
 
@@ -424,6 +517,27 @@ fn ask_box(ui: &Ui, p: Paint) -> El {
         ))
 }
 
+/// Aa: the captions' size, one step larger per press, back to the
+/// smallest after the largest (`labs.teleprompter_text_size`, IN-05).
+fn text_size(ui: &Ui, p: Paint) -> El {
+    let size = ui.settings.labs.teleprompter_text_size;
+    button(
+        p,
+        "teleprompter-text-size",
+        "Aa",
+        ButtonKind::Secondary,
+        |ui: &mut Ui, _: &mut Tx| {
+            let next = ui.settings.labs.teleprompter_text_size.next();
+            ui.update(|settings| settings.labs.teleprompter_text_size = next);
+        },
+    )
+    .label(tr("Text size"))
+    .help(crate::desktop::i18n::tr_fill(
+        "Text size: {}",
+        tr(size.label()),
+    ))
+}
+
 /// A message's switch: the assistant reads the message while on; `flip`
 /// turns it over.
 fn use_in_ai(p: Paint, used: bool, flip: impl Fn() + 'static) -> El {
@@ -435,4 +549,25 @@ fn use_in_ai(p: Paint, used: bool, flip: impl Fn() + 'static) -> El {
         .focusable(true)
         .child(row_switch(p, used))
         .on_press(move |_: &mut Ui| flip())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::excerpt;
+
+    #[test]
+    fn a_long_answer_folds_to_its_first_lines() {
+        assert_eq!(excerpt("Short."), None);
+        assert_eq!(excerpt("One.\n\nTwo.\n- three"), None);
+        let long = "**Say this:** hola.\n\n**Key points:**\n- uno\n- dos";
+        assert_eq!(
+            excerpt(long),
+            Some("**Say this:** hola.\n\n**Key points:**\n- uno")
+        );
+        let words = "palabra ".repeat(60);
+        let cut = excerpt(&words).unwrap();
+        assert!(cut.len() <= super::FOLDED_BYTES && cut.ends_with("palabra"));
+        let accents = "é".repeat(200);
+        assert!(excerpt(&accents).is_some());
+    }
 }
