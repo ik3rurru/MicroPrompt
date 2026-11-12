@@ -6,8 +6,9 @@ use super::*;
 
 const SHOWN: usize = 3;
 
-/// An available update, as a secondary button with a dot.
-pub(super) fn control(ui: &Ui, p: Paint) -> Option<El> {
+/// An available update, as a secondary button with a dot, or in the compact
+/// sidebar an icon with the dot, named by the button's words.
+pub(super) fn control(ui: &Ui, p: Paint, compact: bool) -> Option<El> {
     let action = match ui.view.as_ref().map(|view| &view.update_status) {
         Some(DesktopUpdateStatus::ReadyToRestart) => Some((
             tr("Restart to update").to_owned(),
@@ -24,6 +25,22 @@ pub(super) fn control(ui: &Ui, p: Paint) -> Option<El> {
     };
     // An available update is a state, not the screen's main action.
     action.map(|(label, action)| {
+        if compact {
+            let c = &p.k.c;
+            return super::sidebar::compact_icon(p, "sidebar-update", &icons::REFRESH, &label)
+                .role("button")
+                .hover(c.hover)
+                .press(c.pressed)
+                .focusable(true)
+                .focus_ring(2.0, -2.0, c.border_focus)
+                .on_press(move |ui: &mut Ui| ui.send(Request::Desktop(action.clone())))
+                .child(
+                    controls::status_dot(p.accent())
+                        .size(6.0, 6.0)
+                        .radius(3.0)
+                        .pin(None, Some(4.0), Some(4.0), None),
+                );
+        }
         row()
             .key("sidebar-update-control")
             .gap(8.0)
