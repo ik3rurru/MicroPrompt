@@ -14,6 +14,10 @@ use super::*;
 const SIZE: (f32, f32) = (980.0, 760.0);
 
 fn runtime(scene: &str) -> Runtime<Ui> {
+    runtime_at(scene, SIZE)
+}
+
+fn runtime_at(scene: &str, size: (f32, f32)) -> Runtime<Ui> {
     let mut state = Ui::with(AppSettings::default(), Service::Fixture(Vec::new()));
     let (_, apply) = SCENES
         .iter()
@@ -25,7 +29,7 @@ fn runtime(scene: &str) -> Runtime<Ui> {
         scale: 2.0,
     };
     let text = TextSystem::new(rune_theme_opencode::FONTS, rune_theme_opencode::FAMILIES);
-    let mut rt = offscreen::runtime(state, view, SIZE, env, text);
+    let mut rt = offscreen::runtime(state, view, size, env, text);
     rt.poll = Some(poll);
     rt.on_key = Some(on_key);
     rt.settle_all();
@@ -171,6 +175,40 @@ fn the_sidebar_says_which_pane_shows_and_switches_through_accessibility() {
     assert!(states(&node(&rt, "nav-history")).contains(&"selected"));
     assert!(!states(&node(&rt, "nav-general")).contains(&"selected"));
     assert_eq!(name(&node(&rt, "pane-title")), "History");
+}
+
+/// In a narrow window the sidebar shows icons alone: each keeps its name,
+/// the footer's version and check and Quit Hex stay reachable, and choosing
+/// a pane still switches to it.
+#[cfg(not(target_os = "macos"))]
+#[test]
+fn the_compact_sidebar_keeps_every_name() {
+    let mut rt = runtime_at("windows-settings", (640.0, 760.0));
+    assert!(rt.find("nav-general/label").is_none(), "labels are hidden");
+    assert_eq!(name(&node(&rt, "nav-general")), "General");
+    assert_eq!(name(&node(&rt, "nav-labs")), "Labs");
+    assert_eq!(name(&node(&rt, "version")), "Check for updates");
+    if host::QUIT_IN_WINDOW {
+        assert_eq!(name(&node(&rt, "quit")), "Quit Hex");
+    }
+    assert!(rt.accessibility_action("nav-history", Action::Click, None));
+    settle(&mut rt);
+    assert_eq!(rt.state.pane, Pane::History);
+    assert!(states(&node(&rt, "nav-history")).contains(&"selected"));
+
+    let rt = runtime("windows-settings");
+    assert!(rt.find("nav-general/label").is_some(), "wide shows labels");
+
+    for scene in ["windows-labs", "mac-update-ready", "history"] {
+        let rt = runtime_at(scene, (640.0, 760.0));
+        for (path, node) in nodes(&rt.accessibility_json()) {
+            let role = node["role"].as_str().unwrap_or_default();
+            assert!(
+                !CONTROLS.contains(&role) || !name(node).is_empty(),
+                "{scene}: {path} ({role}) has no name"
+            );
+        }
+    }
 }
 
 /// History's list says how many entries it holds and each row its place,

@@ -586,8 +586,8 @@ fn spec() -> AppSpec<Ui> {
     AppSpec {
         title: "Hex",
         size: WINDOW_SIZE,
-        // Narrower windows crowd the sidebar and rows.
-        min_size: Some((860.0, 560.0)),
+        // Narrower windows crowd the rows; the sidebar is icons alone by then.
+        min_size: Some((sidebar::MIN_WINDOW_WIDTH, 560.0)),
         init: Ui::fixture_base,
         view,
         scenes: SCENES,
@@ -1437,7 +1437,7 @@ fn view(ui: &Ui, cx: &mut Cx<Ui>) -> El {
         .role("none")
         .fill(p.k.c.bg_deep)
         .hover_motion_within(Anim::INSTANT, Anim::INSTANT)
-        .child(sidebar(ui, p))
+        .child(sidebar(ui, p, sidebar::compact(cx)))
         .child(panel);
     if let Some(modal) = picker::modal(ui, p) {
         layer.extend(modal);

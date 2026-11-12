@@ -213,31 +213,68 @@ pub(super) fn pane_header(p: Paint, title: &str, switch: Option<El>, actions: Ve
         .children(actions)
 }
 
-pub(super) fn sidebar(ui: &Ui, p: Paint) -> El {
+/// Below this window width the sidebar shows its icons alone, each naming
+/// itself on hover, so the pane keeps the room. macOS's window is a fixed
+/// size and never narrows to it.
+pub(super) const COMPACT_BELOW: f32 = 860.0;
+
+/// The narrowest window: the compact sidebar leaves the panes room for their
+/// rows down to here. macOS keeps the wide sidebar's minimum.
+pub(super) const MIN_WINDOW_WIDTH: f32 = if cfg!(target_os = "macos") {
+    COMPACT_BELOW
+} else {
+    640.0
+};
+
+/// The compact sidebar: one 28 pt icon column between 8 pt margins.
+const COMPACT_WIDTH: f32 = NAV_ROW_HEIGHT + 16.0;
+
+/// Whether the window is narrow enough for the compact sidebar. It reads
+/// the window's own width, which the sidebar never changes, so it settles
+/// in the first frame.
+pub(super) fn compact(cx: &Cx<Ui>) -> bool {
+    !cfg!(target_os = "macos")
+        && cx
+            .layout_with("window", |rect| rect[2] < COMPACT_BELOW)
+            .unwrap_or(false)
+}
+
+pub(super) fn sidebar(ui: &Ui, p: Paint, compact: bool) -> El {
     let mut nav = lists::source_list(col().key("nav"));
     for pane in labs::main_panes(ui) {
         nav = nav.child(nav_slot(
             p,
             pane,
             ui.pane == pane && !ui.labs_open,
+            compact,
             NAV_ROW_GAP / 2.0,
             NAV_ROW_GAP / 2.0,
         ));
     }
-    nav = nav.children(labs::playground_nav(ui, p));
-    nav = nav.child(labs::nav(ui, p));
-    title_bar(col())
+    nav = nav.children(labs::playground_nav(ui, p, compact));
+    nav = nav.child(labs::nav(ui, p, compact));
+    let sidebar = title_bar(col())
         .key("sidebar")
         .role("navigation")
-        .w(220.0)
         .h_full()
         .pt(SIDEBAR_TOP - NAV_ROW_GAP / 2.0)
         .pb(12.0)
-        .pl(10.0)
-        .pr(6.0)
         .child(nav)
         .child(el().key("spacer").grow(1.0))
-        .children(sidebar_update::control(ui, p))
+        .children(sidebar_update::control(ui, p, compact));
+    if compact {
+        // The update's notes and why it can't install itself are left to
+        // the wide sidebar; the version and the check are one icon.
+        return sidebar
+            .w(COMPACT_WIDTH)
+            .px(8.0)
+            .children(host::QUIT_IN_WINDOW.then(|| compact_quit(p)))
+            .child(compact_footer(ui, p));
+    }
+    sidebar
+        .w(220.0)
+        .pl(10.0)
+        .pr(6.0)
         .children(sidebar_update::notes(ui, p))
         .children(sidebar_update::blocked(ui, p))
         .children(host::QUIT_IN_WINDOW.then(|| quit_item(p)))
@@ -267,82 +304,21 @@ fn footer(ui: &Ui, p: Paint) -> El {
                     .truncate(),
             )
     };
-    let status = ui.view.as_ref().map(|view| &view.update_status);
-    let status = match status {
-        None
-        | Some(
-            DesktopUpdateStatus::Unavailable
-            | DesktopUpdateStatus::Available
-            | DesktopUpdateStatus::ReadyToRestart
-            | DesktopUpdateStatus::SwitchAvailable { .. },
-        ) => None,
-        // After a check the person asked for, the line says how it went
-        // (#1120); the hourly check alone never changes its words.
-        Some(status @ (DesktopUpdateStatus::Current | DesktopUpdateStatus::Failed)) => {
-            let words = match status {
-                DesktopUpdateStatus::Current if ui.update_asked => tr("Hex is up to date"),
-                DesktopUpdateStatus::Failed if ui.update_asked => tr("Couldn't check for updates"),
-                _ => tr("Check for updates"),
-            };
-            Some(
-                line("update-status", words, c.text_muted)
-                    .role("button")
-                    .label(tr("Check for updates"))
-                    .hover(c.hover)
-                    .press(c.pressed)
-                    .focusable(true)
-                    .focus_ring(2.0, -2.0, c.border_focus)
-                    .on_press(|ui: &mut Ui| {
-                        ui.update_asked = true;
-                        ui.send(Request::Desktop(DesktopAction::CheckForUpdates));
-                    }),
-            )
-        }
+    let status = update_status(ui).map(|status| match status {
+        Status::Check(words) => checks(p, line("update-status", words, c.text_muted)),
         // Quieter while it checks; the hourly check keeps the line's words.
-        Some(DesktopUpdateStatus::Checking) => Some(
-            line(
-                "update-status",
-                if ui.update_asked {
-                    tr("Checking for updates…")
-                } else {
-                    tr("Check for updates")
-                },
-                p.faint(),
-            )
-            .label(tr("Checking for updates…")),
-        ),
-        Some(DesktopUpdateStatus::Managed) => Some(line(
-            "update-status",
-            tr("Managed by your organization"),
-            p.faint(),
-        )),
-        Some(DesktopUpdateStatus::Downloading) => {
-            Some(line("update-status", tr("Downloading update"), p.faint()))
+        Status::Checking(words) => {
+            line("update-status", words, p.faint()).label(tr("Checking for updates…"))
         }
-        Some(DesktopUpdateStatus::SourceBuild) => Some(line(
-            "update-status",
-            if ui.build_preview.unwrap_or_else(build_kind) == BuildKind::Local {
-                tr("Local build · updates off")
-            } else {
-                tr("Updated from your source checkout")
-            },
-            p.faint(),
-        )),
-        Some(DesktopUpdateStatus::PackageManager) => Some(line(
-            "update-status",
-            tr("Updated by your package manager"),
-            p.faint(),
-        )),
-        Some(DesktopUpdateStatus::PackageUpdate { command }) => Some(
-            text(command.clone())
-                .key("update-command")
-                .font(p.k.ty.small)
-                .color(p.faint())
-                .wrap()
-                .px(6.0)
-                .py(2.0),
-        ),
-    };
+        Status::Quiet(words) => line("update-status", words, p.faint()),
+        Status::Command(command) => text(command)
+            .key("update-command")
+            .font(p.k.ty.small)
+            .color(p.faint())
+            .wrap()
+            .px(6.0)
+            .py(2.0),
+    });
     col()
         .key("footer")
         .mt(8.0)
@@ -353,6 +329,111 @@ fn footer(ui: &Ui, p: Paint) -> El {
         ))
         .children(status)
 }
+
+/// What the footer's status line says under the version.
+enum Status {
+    /// A manual check, saying how the last one the person asked for went.
+    Check(&'static str),
+    Checking(&'static str),
+    /// What the updater is doing, or why it doesn't.
+    Quiet(&'static str),
+    /// The package manager's command that updates Hex.
+    Command(String),
+}
+
+fn update_status(ui: &Ui) -> Option<Status> {
+    let status = ui.view.as_ref().map(|view| &view.update_status)?;
+    Some(match status {
+        DesktopUpdateStatus::Unavailable
+        | DesktopUpdateStatus::Available
+        | DesktopUpdateStatus::ReadyToRestart
+        | DesktopUpdateStatus::SwitchAvailable { .. } => return None,
+        // After a check the person asked for, the line says how it went
+        // (#1120); the hourly check alone never changes its words.
+        DesktopUpdateStatus::Current if ui.update_asked => Status::Check(tr("Hex is up to date")),
+        DesktopUpdateStatus::Failed if ui.update_asked => {
+            Status::Check(tr("Couldn't check for updates"))
+        }
+        DesktopUpdateStatus::Current | DesktopUpdateStatus::Failed => {
+            Status::Check(tr("Check for updates"))
+        }
+        DesktopUpdateStatus::Checking => Status::Checking(if ui.update_asked {
+            tr("Checking for updates…")
+        } else {
+            tr("Check for updates")
+        }),
+        DesktopUpdateStatus::Managed => Status::Quiet(tr("Managed by your organization")),
+        DesktopUpdateStatus::Downloading => Status::Quiet(tr("Downloading update")),
+        DesktopUpdateStatus::SourceBuild => Status::Quiet(
+            if ui.build_preview.unwrap_or_else(build_kind) == BuildKind::Local {
+                tr("Local build · updates off")
+            } else {
+                tr("Updated from your source checkout")
+            },
+        ),
+        DesktopUpdateStatus::PackageManager => Status::Quiet(tr("Updated by your package manager")),
+        DesktopUpdateStatus::PackageUpdate { command } => Status::Command(command.clone()),
+    })
+}
+
+/// A footer element that checks for updates when pressed.
+fn checks(p: Paint, element: El) -> El {
+    let c = &p.k.c;
+    element
+        .role("button")
+        .label(tr("Check for updates"))
+        .hover(c.hover)
+        .press(c.pressed)
+        .focusable(true)
+        .focus_ring(2.0, -2.0, c.border_focus)
+        .on_press(|ui: &mut Ui| {
+            ui.update_asked = true;
+            ui.send(Request::Desktop(DesktopAction::CheckForUpdates));
+        })
+}
+
+/// The compact footer: one icon whose tooltip gives the version and the
+/// status line, and which checks for updates where the line would.
+fn compact_footer(ui: &Ui, p: Paint) -> El {
+    let version = version_label();
+    let (about, check) = match update_status(ui) {
+        Some(Status::Check(words)) => (format!("{version}\n{words}"), true),
+        Some(Status::Checking(words) | Status::Quiet(words)) => {
+            (format!("{version}\n{words}"), false)
+        }
+        Some(Status::Command(command)) => (format!("{version}\n{command}"), false),
+        None => (version, false),
+    };
+    let item = compact_icon(p, "version", &INFO_ICON, &about).mt(8.0);
+    if check { checks(p, item) } else { item }
+}
+
+/// A compact sidebar icon, a `NAV_ROW_HEIGHT` square named `label`, which
+/// shows its name on hover.
+pub(super) fn compact_icon(p: Paint, key: &str, glyph: &'static Icon, label: &str) -> El {
+    row()
+        .key(key)
+        .label(label)
+        .help(label)
+        .h(NAV_ROW_HEIGHT)
+        .center()
+        .radius(p.k.radius.sm)
+        .child(
+            icon(glyph, 16.0)
+                .key("icon")
+                .color(p.k.c.icon_muted)
+                .a11y_hidden(),
+        )
+}
+
+static INFO_ICON: Icon = Icon {
+    name: "hex-sidebar-info",
+    view: 24.0,
+    body: concat!(
+        r#"<path d="M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20z" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>"#,
+        r#"<path d="M12 16v-4M12 8h.01" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>"#,
+    ),
+};
 
 /// A local or test build marks itself beside the version, quietly: an outline
 /// pill with a dot, in muted theme tokens.
@@ -435,7 +516,7 @@ fn version_label() -> String {
 /// reaching halfway into the gaps around its item, so wherever the pointer
 /// is in the column, the nearest item shows its hover, and a press there
 /// selects it.
-fn nav_slot(p: Paint, pane: Pane, on: bool, above: f32, below: f32) -> El {
+fn nav_slot(p: Paint, pane: Pane, on: bool, compact: bool, above: f32, below: f32) -> El {
     col()
         .key(format!("{}-slot", pane.key()))
         // Assistive technology sees the item alone.
@@ -447,7 +528,7 @@ fn nav_slot(p: Paint, pane: Pane, on: bool, above: f32, below: f32) -> El {
             select_on_down(ui, d, tx, pane)
         })
         .on_press_tx(move |ui: &mut Ui, tx: &mut Tx| ui.select_pane(pane, tx))
-        .child(nav_item(p, pane, on))
+        .child(nav_item(p, pane, on, compact))
 }
 
 /// Switch on pointer down, like a native sidebar; the press keeps keyboard
@@ -458,7 +539,7 @@ fn select_on_down(ui: &mut Ui, d: &mut rune::Drag, tx: &mut Tx, pane: Pane) {
     }
 }
 
-fn nav_item(p: Paint, pane: Pane, on: bool) -> El {
+fn nav_item(p: Paint, pane: Pane, on: bool, compact: bool) -> El {
     let c = &p.k.c;
     // A row of the navigation list, selected while its pane shows.
     let mut item = row()
@@ -490,18 +571,34 @@ fn nav_item(p: Paint, pane: Pane, on: bool) -> El {
                 .color(if on { c.icon_base } else { c.icon_muted })
                 .a11y_hidden(),
         )
-        .child(
+        .children((!compact).then(|| {
             text(pane.title())
                 .key("label")
                 .font(p.k.ty.ui)
                 .color(if on { c.text_base } else { c.text_muted })
                 .truncate()
-                .a11y_hidden(),
-        );
+                .a11y_hidden()
+        }));
+    if compact {
+        item = item.help(pane.title());
+    }
     if on {
         item = item.fill(c.layer_02);
     }
     lists::source_item(item, on)
+}
+
+/// [`quit_item`] in the compact sidebar.
+fn compact_quit(p: Paint) -> El {
+    let c = &p.k.c;
+    compact_icon(p, "quit", &icons::POWER, tr("Quit Hex"))
+        .role("button")
+        .mt(NAV_ROW_GAP)
+        .hover(c.hover)
+        .press(c.pressed)
+        .on_press(|ui: &mut Ui| ui.quit())
+        .focusable(true)
+        .focus_ring(2.0, -2.0, c.border_focus)
 }
 
 /// Linux has no tray: the window's way to stop Hex. Closing the window

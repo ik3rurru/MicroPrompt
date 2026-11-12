@@ -61,6 +61,7 @@ fn nav_row(
     icon: &'static Icon,
     label: &'static str,
     on: bool,
+    compact: bool,
     press: impl Fn(&mut Ui, &mut Tx) + 'static,
 ) -> El {
     let c = &p.k.c;
@@ -85,13 +86,17 @@ fn nav_row(
                 .color(if on { c.icon_base } else { c.icon_muted })
                 .a11y_hidden(),
         )
-        .child(
+        // The compact sidebar shows the icon alone, its name on hover.
+        .children((!compact).then(|| {
             text(label)
                 .key("label")
                 .font(p.k.ty.ui)
                 .color(if on { c.text_base } else { c.text_muted })
-                .a11y_hidden(),
-        );
+                .a11y_hidden()
+        }));
+    if compact {
+        item = item.help(label);
+    }
     if on {
         item = item.fill(c.layer_02);
     }
@@ -106,7 +111,7 @@ fn nav_row(
 
 /// The Playground item while Labs › Playground is on (dev builds only): it
 /// opens it.
-pub(super) fn playground_nav(ui: &Ui, p: Paint) -> Option<El> {
+pub(super) fn playground_nav(ui: &Ui, p: Paint, compact: bool) -> Option<El> {
     (Feature::Playground.shipped() && ui.settings.labs.playground).then(|| {
         nav_row(
             p,
@@ -114,13 +119,14 @@ pub(super) fn playground_nav(ui: &Ui, p: Paint) -> Option<El> {
             &SPARKLES,
             "Playground",
             false,
+            compact,
             |_: &mut Ui, tx: &mut Tx| tx.open_playground(),
         )
     })
 }
 
 /// The Labs item: opens the Labs page, or goes back to General.
-pub(super) fn nav(ui: &Ui, p: Paint) -> El {
+pub(super) fn nav(ui: &Ui, p: Paint, compact: bool) -> El {
     let on = ui.labs_open;
     nav_row(
         p,
@@ -128,6 +134,7 @@ pub(super) fn nav(ui: &Ui, p: Paint) -> El {
         &LABS_ICON,
         tr("Labs"),
         on,
+        compact,
         move |ui: &mut Ui, tx: &mut Tx| {
             if on {
                 ui.select_pane(Pane::General, tx);

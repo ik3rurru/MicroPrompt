@@ -746,8 +746,12 @@ latency measurement.
 Sidebar                                  // settings.nav
 ├── General, Output, History, then each feature that is on: Meetings and
 │   Voice Filter (Labs toggles), Annotate, Playground (Labs, an item)
-└── Labs -> a store of unfinished features, each off by default: search, categories, cards with their own settings inline; hex://labs/<feature> opens its group (labs.md)
-    // Command-1…9 follow the panes' order (labs::order)
+├── Labs -> a store of unfinished features, each off by default: search, categories, cards with their own settings inline; hex://labs/<feature> opens its group (labs.md)
+│   // Command-1…9 follow the panes' order (labs::order)
+└── Window under 860 pt wide (Linux, Windows; minimum 640) -> icons alone, each named and
+    showing its name on hover (El::help); Update, Quit Hex, and an info icon (version and
+    Check for updates) stay; update notes hide // sidebar::compact
+    // check: the_compact_sidebar_keeps_every_name; scenes at --size 640x760
 
 General                                  // settings
 ├── Basics card -> Shortcut, Speech model, Language, Microphone, Launch at login
